@@ -149,6 +149,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .smc-fvg{background:rgba(88,166,255,.12);color:var(--blue)}
 .smc-choch{background:rgba(250,122,53,.12);color:var(--orange)}
 .smc-obv{background:rgba(63,185,80,.1);color:var(--green)}
+.smc-ob{background:rgba(255,215,0,.15);color:var(--yellow2)}
+.smc-ote{background:rgba(255,105,180,.12);color:#ff69b4}
 .card-signals{font-size:.72rem;color:var(--text2);line-height:1.7}
 .card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
 /* EMPTY */
@@ -191,6 +193,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
   .cards-grid{grid-template-columns:1fr}
   .stats-bar{grid-template-columns:repeat(3,1fr)}
 }
+/* DETAIL MODAL ROWS */
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.detail-section{background:var(--bg3);border-radius:var(--radius);padding:13px;margin-bottom:0}
+.detail-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:.8rem;border-bottom:1px solid rgba(48,54,61,.5)}
+.detail-row:last-child{border-bottom:none}
+.detail-key{color:var(--text2);flex-shrink:0;margin-right:8px}
+.detail-val{font-weight:600;text-align:right}
+.dv-green{color:var(--green)}
+.dv-red{color:var(--red)}
+.dv-blue{color:var(--blue)}
+.dv-yellow{color:var(--yellow2)}
+.dv-purple{color:var(--purple)}
+.dv-orange{color:var(--orange)}
+.pt-pivot{color:var(--yellow2);font-weight:700}
+@media(max-width:600px){.detail-grid{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -262,10 +280,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
       <span class="preset-chip" data-group="futures">📊 期貨指數</span>
     </div>
     <div class="config-toggle" id="configToggle">
-      <span class="config-arrow" id="configArrow">▶
-      
-      
-</span>
+      <span class="config-arrow" id="configArrow">▶</span>
       進階參數設定（ATR倍數、均線週期等）
     </div>
     <div class="config-body" id="configBody">
@@ -417,24 +432,32 @@ function getSessionMult(symbol) {
 }
 
 // ══════════════════════════
-// DATA FETCH
+// DATA FETCH (完全保留原版)
 // ════════════════════
 async function fetchOHLCV(symbol, period, interval) {
   const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${period}&includePrePost=false`;
+  
+  // 【關鍵修改】換上目前存活率最高、最穩定的 3 個代理伺服器，並移除常被封鎖的 corsproxy.io
   const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(base)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-    base
+    `https://thingproxy.freeboard.io/fetch/${base}`
   ];
+
   for(const url of proxies){
     try{
-      const res  = await fetch(url, {signal:AbortSignal.timeout(14000)});
+      const res  = await fetch(url, {signal:AbortSignal.timeout(12000)});
+      // 確保伺服器有正常回應，否則立刻換下一個節點
+      if(!res.ok) continue; 
+      
       const data = await res.json();
       const r    = data?.chart?.result?.[0];
       if(!r) continue;
+      
       const ts = r.timestamp || r.timestamps;
       const q  = r.indicators?.quote?.[0];
       if(!ts||!q) continue;
+      
       const rows = [];
       for(let i=0;i<ts.length;i++){
         if(q.close[i]==null||isNaN(q.close[i])) continue;
@@ -447,8 +470,12 @@ async function fetchOHLCV(symbol, period, interval) {
           v: q.volume[i]|| 0,
         });
       }
+      // 只要成功抓到 20 根 K 棒，就立刻回傳並結束抓取
       if(rows.length>=20) return rows;
-    } catch(e){ continue; }
+    } catch(e){ 
+      // 發生 Timeout 或被阻擋，自動無縫切換到下一個 Proxy
+      continue; 
+    }
   }
   return null;
 }
@@ -469,6 +496,7 @@ function calcIndicators(rows) {
   const ema9  = ema(C, CFG.emaFast);
   const ema21 = ema(C, CFG.emaSlow);
   const ema55 = ema(C, CFG.emaTrend);
+  const ema200= ema(C, 200);
   const ema12 = ema(C, 12);
   const ema26 = ema(C, 26);
 
@@ -697,13 +725,29 @@ function calcIndicators(rows) {
     }
   }
 
+  // SMC Order Block (OB) - 新增
+  const obBull = new Array(n).fill(false);
+  const obBear = new Array(n).fill(false);
+  for(let i=2; i<n; i++){
+    if(smcFvgBull[i] || smcBosBull[i]) {
+      for(let j=i-1; j>=Math.max(0, i-5); j--){
+        if(C[j] < O[j]) { obBull[i] = true; break; }
+      }
+    }
+    if(smcFvgBear[i] || smcBosBear[i]) {
+      for(let j=i-1; j>=Math.max(0, i-5); j--){
+        if(C[j] > O[j]) { obBear[i] = true; break; }
+      }
+    }
+  }
+
   // OBV Trend
   const obvTrendUp   = obv.map((_,i) => !isNaN(obvMa[i]) && obv[i]>obvMa[i]);
   const obvTrendDown = obv.map((_,i) => !isNaN(obvMa[i]) && obv[i]<obvMa[i]);
 
   return {
     n, C, H, L, O, V, hasVol,
-    ema9, ema21, ema55, hma9, hma21,
+    ema9, ema21, ema55, ema200, hma9, hma21,
     rsi, cci, willr, roc1, roc3,
     macd, macdSig, macdHist,
     trix, trixSig,
@@ -725,8 +769,10 @@ function calcIndicators(rows) {
     bullPin, bearPin, insideBar, ibBreakUp, ibBreakDn,
     bullEngulf, bearEngulf, doji, dragonfly, gravestone,
     triangle, triBreakUp, triBreakDn, strongBull, strongBear,
+    prevHigh, prevLow,
     smcBosBull, smcBosBear, smcChochBull, smcChochBear,
     smcSweepBull, smcSweepBear, smcFvgBull, smcFvgBear,
+    obBull, obBear,
     obvTrendUp, obvTrendDown,
   };
 }
@@ -766,6 +812,15 @@ function scoreSymbol(rows, ind, symbol) {
   let buy=0, sell=0;
   const signals=[], patterns=[], warnings=[];
 
+  const ph = ind.prevHigh[i], pl = ind.prevLow[i];
+  const range = ph - pl;
+  const midPoint = pl + range * 0.5;
+  const isDiscount = c < midPoint;
+  const isPremium  = c > midPoint;
+  
+  const isOteBull = !isNaN(ph) && !isNaN(pl) && c <= (ph - range * 0.618) && c >= (ph - range * 0.786) && (!isNaN(ind.ema200[i]) && c > ind.ema200[i]);
+  const isOteBear = !isNaN(ph) && !isNaN(pl) && c >= (pl + range * 0.618) && c <= (pl + range * 0.786) && (!isNaN(ind.ema200[i]) && c < ind.ema200[i]);
+
   // 1. SMC
   if(ind.smcSweepBull[i]) { buy  += W.smc_sweep; signals.push('🎯掃蕩多(Sweep)'); }
   if(ind.smcSweepBear[i]) { sell += W.smc_sweep; signals.push('🎯掃蕩空(Sweep)'); }
@@ -773,6 +828,17 @@ function scoreSymbol(rows, ind, symbol) {
   if(ind.smcFvgBear[i])   { sell += W.smc_fvg;   signals.push('⚡FVG空(位移)'); }
   if(ind.smcChochBull[i]) { buy  += W.smc_choch;  signals.push('🔄CHoCH翻多'); }
   if(ind.smcChochBear[i]) { sell += W.smc_choch;  signals.push('🔄CHoCH翻空'); }
+  
+  if(ind.obBull[i]) { buy += 15; signals.push('🧱看漲OB(訂單塊)'); }
+  if(ind.obBear[i]) { sell += 15; signals.push('🧱看跌OB(訂單塊)'); }
+  if(isOteBull)     { buy += 12; signals.push('🎯OTE絕佳進場(多)'); }
+  if(isOteBear)     { sell += 12; signals.push('🎯OTE絕佳進場(空)'); }
+
+  if(ind.smcFvgBull[i] && isDiscount) { buy += 10; signals.push('✅折價區FVG'); }
+  if(ind.smcFvgBear[i] && isPremium)  { sell += 10; signals.push('✅溢價區FVG'); }
+  if(ind.smcSweepBull[i] && ind.smcChochBull[i]) { buy += 15; signals.push('🔥掃蕩+CHoCH(強反轉)'); }
+  if(ind.smcSweepBear[i] && ind.smcChochBear[i]) { sell += 15; signals.push('🔥掃蕩+CHoCH(強反轉)'); }
+
   if(ind.obvTrendUp[i])   { buy  += 8;            signals.push('OBV資金流入'); }
   else if(ind.obvTrendDown[i]){ sell += 8;         signals.push('OBV資金流出'); }
 
@@ -973,8 +1039,8 @@ function scoreSymbol(rows, ind, symbol) {
     chopV, regime,
     bbSqueeze: sq ? '⚡蓄積中' : '─',
     keyRes, keySup,
-    patterns: patterns.slice(0,4),
-    signals:  signals.slice(0,6),
+    patterns: patterns,
+    signals:  signals,
     warnings,
     // detail data
     ind, rows,
@@ -984,6 +1050,12 @@ function scoreSymbol(rows, ind, symbol) {
     smcFvgBear:   ind.smcFvgBear[i],
     smcChochBull: ind.smcChochBull[i],
     smcChochBear: ind.smcChochBear[i],
+    obBull:       ind.obBull[i],
+    obBear:       ind.obBear[i],
+    isOteBull:    isOteBull,
+    isOteBear:    isOteBear,
+    isDiscount:   isDiscount,
+    isPremium:    isPremium,
     obvUp:        ind.obvTrendUp[i],
     obvDn:        ind.obvTrendDown[i],
     pivP:  ind.pivP[i],
@@ -1039,6 +1111,10 @@ function renderCard(r){
     r.smcFvgBear   ? '<span class="smc-tag smc-fvg">⚡FVG空</span>'      : '',
     r.smcChochBull ? '<span class="smc-tag smc-choch">🔄CHoCH多</span>'  : '',
     r.smcChochBear ? '<span class="smc-tag smc-choch">🔄CHoCH空</span>'  : '',
+    r.obBull       ? '<span class="smc-tag smc-ob">🧱OB多</span>'      : '',
+    r.obBear       ? '<span class="smc-tag smc-ob">🧱OB空</span>'      : '',
+    r.isOteBull    ? '<span class="smc-tag smc-ote">🎯OTE多</span>'    : '',
+    r.isOteBear    ? '<span class="smc-tag smc-ote">🎯OTE空</span>'    : '',
     r.obvUp        ? '<span class="smc-tag smc-obv">OBV流入</span>'      : '',
     r.obvDn        ? '<span class="smc-tag smc-obv">OBV流出</span>'      : '',
   ].filter(Boolean).join('');
@@ -1049,8 +1125,6 @@ function renderCard(r){
       <div>
         <div class="card-symbol">${r.symbol}</div>
         <div class="card-time">${r.barTime}</div>                           
-
-
       </div>
       <div class="card-dir ${r.dirClass}">${r.dir}</div>
     </div>
@@ -1073,8 +1147,10 @@ function renderCard(r){
     </div>
     ${smcTags ? `<div class="card-smc">${smcTags}</div>` : ''}
     <div class="card-signals">
-      ${r.patterns.join(' · ')}${r.patterns.length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
+      ${r.patterns.length ? `<div style="margin-bottom:3px;color:var(--purple)">${r.patterns.join(' · ')}</div>` : ''}
+      ${r.signals.length  ? `<div>${r.signals.join(' · ')}</div>` : '<div style="color:var(--text3)">─</div>'}
     </div>
+
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
 }
@@ -1132,10 +1208,14 @@ function showDetail(symbol){
   const smcList = [
     r.smcSweepBull ? '🎯 買方流動性掃蕩 (Sweep Bull)' : '',
     r.smcSweepBear ? '🎯 賣方流動性掃蕩 (Sweep Bear)' : '',
-    r.smcFvgBull   ? '⚡多頭 FVG（大實體位移）'       : '',
-    r.smcFvgBear   ? '⚡ 空頭 FVG（大實體位移）'       : '',
+    r.smcFvgBull   ? `⚡多頭 FVG ${r.isDiscount?'<span class="badge badge-green">優質折價區</span>':'<span class="badge badge-yellow">未在折價區</span>'}` : '',
+    r.smcFvgBear   ? `⚡空頭 FVG ${r.isPremium?'<span class="badge badge-red">優質溢價區</span>':'<span class="badge badge-yellow">未在溢價區</span>'}`  : '',
     r.smcChochBull ? '🔄 結構轉換翻多 (CHoCH Bull)'    : '',
     r.smcChochBear ? '🔄 結構轉換翻空 (CHoCH Bear)'    : '',
+    r.obBull       ? '🧱 觸發看漲訂單塊 (Order Block Bull)' : '',
+    r.obBear       ? '🧱 觸發看跌訂單塊 (Order Block Bear)' : '',
+    r.isOteBull    ? '🎯 進入順勢 OTE 絕佳多頭進場區 (0.618-0.786 回撤)' : '',
+    r.isOteBear    ? '🎯 進入順勢 OTE 絕佳空頭進場區 (0.618-0.786 回撤)' : '',
   ].filter(Boolean);
 
   const smcHtml = smcList.length
@@ -1312,7 +1392,7 @@ async function runScan(symbols){
       updateProgress(idx+1, symbols.length, `❌ ${sym} 錯誤：${e.message}`);
     }
     // 避免請求過快
-    if(idx < symbols.length-1) await new Promise(r=>setTimeout(r, 300));
+    if(idx < symbols.length-1) await new Promise(r=>setTimeout(r, 1500));
   }
 
   results.sort((a,b) => Math.abs(b.score) - Math.abs(a.score));
@@ -1491,4 +1571,3 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
-      
