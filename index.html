@@ -1172,7 +1172,16 @@ function scoreSymbol(rows, ind, symbol) {
     symbol, barTime, close:c,
     dir, dirClass, score, buy, sell,
     timing, sl, tp1, tp2, r, maxHold,
-    pos, atrV, adxV,
+    pos,
+    posAmount: pos.amount,
+    posKelly:  pos.kelly,
+    posShares: pos.shares,
+    posLabel: (()=>{
+      if(pos.amount<=0) return '─（觀望）';
+      const pct = Math.round(pos.amount/CFG.equity*100);
+      return pct + '% · ' + pos.amount.toLocaleString() + '元';
+    })(),
+    atrV, adxV,
     rsiV, cciV, wrV, txVal:tx, cmfV, arV,
     chopV, regime,
     bbSqueeze: sq ? '⚡蓄積中' : '─',
@@ -1541,13 +1550,36 @@ function showDetail(symbol){
           </div>
           <div style="flex:1;background:var(--bg2);border-radius:5px;padding:5px 4px;text-align:center">
             <div style="font-size:.63rem;color:var(--text3)">建議倉位</div>
-            <div style="font-weight:700;color:var(--text)">${r.pos}</div>
+            <div style="font-weight:700;color:${r.posAmount>0?'var(--green)'  :'var(--text3)'}">${r.posLabel}</div>
           </div>
           <div style="flex:1;background:var(--bg2);border-radius:5px;padding:5px 4px;text-align:center">
             <div style="font-size:.63rem;color:var(--text3)">最大持倉</div>
             <div style="font-weight:600;color:var(--text2)">${r.maxHold}</div>
           </div>
         </div>
+        ${r.posAmount>0 ? `<div style="margin-top:8px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid rgba(52,211,153,.2)">
+          <div style="font-size:.67rem;color:var(--text3);margin-bottom:5px">📊 Kelly 倉位計算明細</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+            <div style="text-align:center;background:var(--bg3);border-radius:4px;padding:4px">
+              <div style="font-size:.6rem;color:var(--text3)">建議動用金額</div>
+              <div style="font-size:.8rem;font-weight:700;color:var(--green)">${r.posAmount.toLocaleString()}</div>
+            </div>
+            <div style="text-align:center;background:var(--bg3);border-radius:4px;padding:4px">
+              <div style="font-size:.6rem;color:var(--text3)">佔帳戶比例</div>
+              <div style="font-size:.8rem;font-weight:700;color:#4ade80">${Math.round(r.posAmount/CFG.equity*100)}%</div>
+            </div>
+            <div style="text-align:center;background:var(--bg3);border-radius:4px;padding:4px">
+              <div style="font-size:.6rem;color:var(--text3)">半Kelly%</div>
+              <div style="font-size:.8rem;font-weight:700;color:var(--yellow2)">${r.posKelly}%</div>
+            </div>
+          </div>
+          <div style="margin-top:5px;font-size:.68rem;color:var(--text3);display:flex;justify-content:space-between">
+            <span>帳戶：${CFG.equity.toLocaleString()} 元</span>
+            <span>每筆風險：${CFG.riskPct}%（${Math.round(CFG.equity*CFG.riskPct/100).toLocaleString()} 元）</span>
+          </div>
+        </div>` : `<div style="margin-top:8px;padding:6px;background:var(--bg2);border-radius:6px;font-size:.72rem;color:var(--text3);text-align:center">
+          ⚪ 評分 ${Math.abs(r.score)}分 未達門檻（${CFG.threshold}分），建議倉位 = 0，觀望
+        </div>`}
       </div>
 
       <div class="ana-card">
