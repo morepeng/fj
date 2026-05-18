@@ -464,10 +464,10 @@ const CFG = {
 };
 
 const PRESETS = {
-  tw:     ['2330.TW','2454.TW','2303.TW','2317.TW','2382.TW','3711.TW','2357.TW','2412.TW','2882.TW','0050.TW'],
-  us:     ['NVDA','AAPL','MSFT','AMZN','GOOGL','META','TSLA','AMD','SOFI','PLTR'],
+  tw:     ['2330.TW','7750.TW','2303.TW','6116.TW','2409.TW','3081.TW','6515.TW','6223.TW','2881.TW','8229.TW'],
+  us:     ['NVDA','XOM','MSFT','CVX','GOOG','ONDS','CIEN','CSCO','COHR','KLAC','LITE'],
   fx:     ['EURUSD=X','GBPUSD=X','USDJPY=X','AUDUSD=X','USDCHF=X','USDCAD=X','NZDUSD=X'],
-  twd:    ['USDTWD=X','TWDUSD=X','TWDJPY=X','TWDCNY=X'],
+  twd:    ['USDTWD=X','TWDUSD=X','TWDJPY=X','JPYTWD=X','CNYTWD=X','TWDCNY=X'],
   metal:  ['GC=F','SI=F','CL=F','BTC-USD','ETH-USD'],
   futures:['ES=F','NQ=F','YM=F','RTY=F'],
 };
@@ -2175,7 +2175,7 @@ async function runScan(symbols){
       updateProgress(idx+1, symbols.length, `❌ ${sym} 錯誤：${e.message}`);
     }
     // 避免請求過快
-    if(idx < symbols.length-1) await new Promise(r=>setTimeout(r, 300));
+    if(idx < symbols.length-1) await new Promise(r=>setTimeout(r, 600));
   }
 
   results.sort((a,b) => Math.abs(b.score) - Math.abs(a.score));
