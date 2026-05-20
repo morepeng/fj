@@ -1055,22 +1055,21 @@ function detectCandlePatterns(rows) {
 
 // ─── 在 calcIndicators 時一併計算並存入 ind ───
 function attachPatterns(rows, ind) {
-  // 取最近10根計算（效能優先）
+  // 取最近20根計算，確保多根形態有足夠資料
   const recent = rows.slice(-20).map(r => ({
-    O: r.O||r.open||r.o||r[1]||0,
-    H: r.H||r.high||r.h||r[2]||0,
-    L: r.L||r.low ||r.l||r[3]||0,
-    C: r.C||r.close||r.c||r[4]||0,
-  })).filter(r=>r.C>0);
+    O: r.o ?? r.O ?? r.open  ?? 0,
+    H: r.h ?? r.H ?? r.high  ?? 0,
+    L: r.l ?? r.L ?? r.low   ?? 0,
+    C: r.c ?? r.C ?? r.close ?? 0,
+  })).filter(r => r.C > 0 && r.H > 0);
   const result = detectCandlePatterns(recent);
-  ind.patternBuy    = result.buyScore;
-  ind.patternSell   = result.sellScore;
-  ind.patternNet    = result.netScore;
-  ind.patternLevel  = result.level;
-  ind.patternAdvice = result.advice;
-  ind.patternConf   = result.conf;
-  ind.patternSigs   = result.signals;
-  // ── K線型態識別（24種）已完成 ──
+  ind.patternBuy    = result.buyScore  ?? 0;
+  ind.patternSell   = result.sellScore ?? 0;
+  ind.patternNet    = result.netScore  ?? 0;
+  ind.patternLevel  = result.level     ?? '─';
+  ind.patternAdvice = result.advice    ?? '無形態';
+  ind.patternConf   = result.conf      ?? '─';
+  ind.patternSigs   = result.signals   ?? [];
   return ind;
 }
 
@@ -2165,7 +2164,7 @@ async function runScan(symbols){
         continue;
       }
       const ind = calcIndicators(rows);
-      attachPatterns(rows, ind);  // ★ 回寫內容形態識別結果
+      attachPatterns(rows, ind);  // ★ 回寫K線形態識別結果
       const res = scoreSymbol(rows, ind, sym);
       results.push(res);
       updateProgress(idx+1, symbols.length, `✅ ${sym} 評分：${res.score>0?'+':''}${res.score}`);
