@@ -1070,10 +1070,7 @@ function attachPatterns(rows, ind) {
   ind.patternAdvice = result.advice;
   ind.patternConf   = result.conf;
   ind.patternSigs   = result.signals;
-  // ── K線型態識別（24種）──
-  if(typeof attachPatterns === 'function') {
-    try { attachPatterns(rows || [], ind); } catch(e){}
-  }
+  // ── K線型態識別（24種）已完成 ──
   return ind;
 }
 
@@ -2168,6 +2165,7 @@ async function runScan(symbols){
         continue;
       }
       const ind = calcIndicators(rows);
+      attachPatterns(rows, ind);  // ★ 回寫內容形態識別結果
       const res = scoreSymbol(rows, ind, sym);
       results.push(res);
       updateProgress(idx+1, symbols.length, `✅ ${sym} 評分：${res.score>0?'+':''}${res.score}`);
