@@ -904,7 +904,7 @@ const PATTERN_WEIGHTS = {
 
 function detectCandlePatterns(rows) {
   // rows = 最近 N 根 K 棒（含 O/H/L/C）
-  if(!rows || rows.length < 3) return {buyScore:0, sellScore:0, signals:[], advice:'數據不足'};
+  if(!rows || rows.length < 3) return {buyScore:0, sellScore:0, netScore:0, signals:[], level:'─', advice:'數據不足', conf:'─'};
 
   const n  = rows.length;
   const i  = n - 1;   // 末根
@@ -1056,7 +1056,7 @@ function detectCandlePatterns(rows) {
 // ─── 在 calcIndicators 時一併計算並存入 ind ───
 function attachPatterns(rows, ind) {
   // 取最近10根計算（效能優先）
-  const recent = rows.slice(-10).map(r => ({
+  const recent = rows.slice(-20).map(r => ({
     O: r.O||r.open||r.o||r[1]||0,
     H: r.H||r.high||r.h||r[2]||0,
     L: r.L||r.low ||r.l||r[3]||0,
