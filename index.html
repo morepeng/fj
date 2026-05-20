@@ -962,20 +962,21 @@ function detectCandlePatterns(rows) {
   // ── 烏雲罩頂：前陽後陰，陰線收低過陽線中點 ──
   hit('DARK_CLOUD', bear0 && bull1 && O0>H1 && C0<(O1+C1)/2 && C0>O1);
 
-  // ── 十字星：實體<5%全幅 ──
-  hit('DOJI', body0/rng0<0.05);
+  // ── 蜻蜓十字：十字 + 長下影（優先於普通DOJI）──
+  hit('DRAGONFLY_DOJI', body0/rng0<0.06 && lower0>rng0*0.6 && upper0<rng0*0.1);
+
+  // ── 墓碑十字：十字 + 長上影（優先於普通DOJI）──
+  hit('GRAVESTONE_DOJI', body0/rng0<0.06 && upper0>rng0*0.6 && lower0<rng0*0.1);
 
   // ── 長腳十字：十字且上下影都長 ──
   hit('LONG_LEGGED_DOJI', body0/rng0<0.05 && upper0>rng0*0.35 && lower0>rng0*0.35);
 
-  // ── 蜻蜓十字：十字 + 長下影 ──
-  hit('DRAGONFLY_DOJI', body0/rng0<0.06 && lower0>rng0*0.6 && upper0<rng0*0.1);
+  // ── 紡錘線：小實體，上下影均衡（非十字）──
+  hit('SPINNING_TOP', body0/rng0>=0.05 && body0/rng0<0.30 && upper0>body0*0.5 && lower0>body0*0.5);
 
-  // ── 墓碑十字：十字 + 長上影 ──
-  hit('GRAVESTONE_DOJI', body0/rng0<0.06 && upper0>rng0*0.6 && lower0<rng0*0.1);
-
-  // ── 紡錘線：小實體，上下影均衡 ──
-  hit('SPINNING_TOP', body0/rng0<0.30 && upper0>body0*0.5 && lower0>body0*0.5);
+  // ── 十字星：實體<5%全幅，且無其他特殊十字型態時才顯示 ──
+  const alreadyDoji = signals.some(s => ['DRAGONFLY_DOJI','GRAVESTONE_DOJI','LONG_LEGGED_DOJI'].includes(s.key));
+  hit('DOJI', body0/rng0<0.05 && !alreadyDoji);
 
   // ── 孕線：末根實體在前根實體內 ──
   if(c2) {
@@ -1055,7 +1056,7 @@ function detectCandlePatterns(rows) {
 
 // ─── 在 calcIndicators 時一併計算並存入 ind ───
 function attachPatterns(rows, ind) {
-  // 取最近20根，確保多根形態有足夠資料
+  // 取最近20根K棒，確保多根形態有足夠資料
   const recent = rows.slice(-20).map(r => ({
     O: r.o != null ? r.o : (r.O != null ? r.O : (r.open  != null ? r.open  : 0)),
     H: r.h != null ? r.h : (r.H != null ? r.H : (r.high  != null ? r.high  : 0)),
@@ -1071,6 +1072,7 @@ function attachPatterns(rows, ind) {
   ind.patternConf   = result.conf      != null ? result.conf      : '─';
   ind.patternSigs   = result.signals   != null ? result.signals   : [];
   return ind;
+  // ★ 無遞迴
 }
 
 
@@ -2022,14 +2024,17 @@ function showDetail(symbol){
 
       <!-- K線型態（末根）-->
       <div style="font-size:.72rem;color:var(--text3);margin:8px 0 4px">🕯️ K線型態（末根）</div>
-      ${r.patSigs && r.patSigs.length ? r.patSigs.map(s=>`
+      ${(()=>{
+        const sigs = (r.patSigs||[]).filter(s => !(s.key==='DOJI' && (r.patSigs||[]).length===1));
+        if(!sigs.length) return `<div style="color:var(--text3);font-size:.76rem;padding:6px 0">─ 末根為整理型態（無強力訊號）</div>`;
+        return sigs.map(s=>`
         <div class="pattern-row ${s.dir==='buy'?'bull':s.dir==='sell'?'bear':'neu'}">
           <span>${s.emoji} ${s.name}</span>
           <span class="pattern-score" style="color:${s.dir==='buy'?'#34d399':s.dir==='sell'?'#f87171':'var(--text3)'}">
-            ${s.dir==='buy'?'+':''}${s.score>=0?'+'+s.score:s.score}
+            ${s.score>0?'+'+s.score:s.score}
           </span>
-        </div>`).join('') : `
-        <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>`}
+        </div>`).join('');
+      })()}
 
       <div style="font-size:.68rem;color:var(--text3);margin-top:8px">
         ※ 純JS算法，對應TA-Lib邏輯，但非完全等價
