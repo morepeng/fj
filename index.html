@@ -157,6 +157,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .pt-bear{background:rgba(248,81,73,.15);color:#fca5a5;border-color:rgba(248,81,73,.35)}
 .pt-neutral{background:rgba(139,148,158,.12);color:#d1d5db;border-color:rgba(139,148,158,.22)}
 .pt-empty{font-size:.76rem;color:var(--text3);padding:6px 0}
+
+.tags{display:flex;flex-wrap:wrap;gap:8px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;border:1px solid transparent}
+.bull{background:rgba(63,185,80,.15);color:#86efac;border-color:rgba(63,185,80,.35)}
+.bear{background:rgba(248,81,73,.15);color:#fca5a5;border-color:rgba(248,81,73,.35)}
+.neu{background:rgba(139,148,158,.12);color:#d1d5db;border-color:rgba(139,148,158,.22)}
 .card-patterns{font-size:.72rem;color:var(--yellow2);margin-top:6px;line-height:1.45}
 .card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
 /* EMPTY */
@@ -1707,6 +1713,15 @@ function updateProgress(done, total, msg=''){
 // ══════════════════════════
 // CARD RENDERER
 // ════════════════════
+
+function safePatternNames(r){
+  const a = Array.isArray(r?.patterns) ? r.patterns : [];
+  const b = Array.isArray(r?.patSigs) ? r.patSigs.map(s => typeof s === 'string' ? s : (s.name || '')) : [];
+  return (a.length ? a : b).filter(Boolean);
+}
+function safePatternObjs(r){
+  return Array.isArray(r?.patSigs) && r.patSigs.length ? r.patSigs : [];
+}
 function renderCard(r){
   const cardClass = r.score>=30 ? 'bull' : r.score<=-30 ? 'bear' : 'neutral';
   const barW = Math.abs(r.score);
@@ -1754,12 +1769,10 @@ function renderCard(r){
     <div class="card-signals">
       ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>p.name).join(' · ')}${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
     </div>
-    <div class="card-patterns">${renderPatternTags(
-      r.patternObjs?.length ? r.patternObjs :
-      r.patSigs?.length ? r.patSigs :
-      r.patterns?.length ? r.patterns : [],
-      '─'
-    )}</div>
+    <div class="card-patterns">
+      ${safePatternNames(r).slice(0,4).map(x => `<span class="tag ${/看漲|向上|多|突破|錘|三角向上/.test(x) ? 'bull' : /看跌|向下|空|跌破/.test(x) ? 'bear' : 'neu'}">${x}</span>`).join(' ')}
+    </div>
+    <div class="small" style="margin-top:8px">技術型態----</div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
 }
@@ -2064,26 +2077,22 @@ function showDetail(symbol){
       </div>
 
       <!-- 技術型態（近5根）-->
-      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length ? `
+      ${r.patterns && r.patterns.length ? `
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:4px">📐 技術型態（近5根）</div>
-      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>`
-        <div class="pattern-row ${p.includes('看漲')||p.includes('向上')||p.includes('多')?'bull':p.includes('看跌')||p.includes('向下')||p.includes('空')?'bear':'neu'}">
-          <span>${p}</span>
-          <span class="pattern-score" style="color:${p.includes('看漲')||p.includes('多')?'#34d399':p.includes('看跌')||p.includes('空')?'#f87171':'var(--text3)'}">
-            ${p.includes('看漲')||p.includes('多')?'+3':p.includes('看跌')||p.includes('空')?'-2':'─'}
-          </span>
-        </div>`).join('')}` : ''}
+      <div class="tags">
+        ${r.patterns.slice(0,4).map(x => `<span class="tag ${/看漲|向上|多|突破|錘|三角向上/.test(x) ? 'bull' : /看跌|向下|空|跌破/.test(x) ? 'bear' : 'neu'}">${x}</span>`).join(' ')}
+      </div>
+      ` : ''}
 
       <!-- K線型態（末根）-->
       <div style="font-size:.72rem;color:var(--text3);margin:8px 0 4px">🕯️ K線型態（末根）</div>
-      ${r.patSigs && r.patSigs.length ? r.patSigs.map(s=>`
-        <div class="pattern-row ${s.dir==='buy'?'bull':s.dir==='sell'?'bear':'neu'}">
-          <span>${s.emoji} ${s.name}</span>
-          <span class="pattern-score" style="color:${s.dir==='buy'?'#34d399':s.dir==='sell'?'#f87171':'var(--text3)'}">
-            ${s.dir==='buy'?'+':''}${s.score>=0?'+'+s.score:s.score}
-          </span>
-        </div>`).join('') : `
-        <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>`}
+      ${r.patSigs && r.patSigs.length ? `
+      <div class="tags">
+        ${r.patSigs.slice(0,4).map(s => `<span class="tag ${s.dir==='buy' ? 'bull' : s.dir==='sell' ? 'bear' : 'neu'}">${s.emoji || '🕯️'} ${s.name}</span>`).join(' ')}
+      </div>
+      ` : `
+      <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>
+      `}
 
       <div style="font-size:.68rem;color:var(--text3);margin-top:8px">
         ※ 純JS算法，對應TA-Lib邏輯，但非完全等價
@@ -2404,4 +2413,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
-      
+     
+
+ 
