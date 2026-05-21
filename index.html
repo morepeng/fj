@@ -1757,7 +1757,7 @@ function renderCard(r){
     <div class="card-patterns">${renderPatternTags(
           normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []),
           '─'
-        )}</div>
+        )}</div>    
 
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
@@ -2079,6 +2079,7 @@ function showDetail(symbol){
       ` : `
       <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>
       `}
+      
       
       <div style="font-size:.68rem;color:var(--text3);margin-top:8px">
         ※ 純JS算法，對應TA-Lib邏輯，但非完全等價
