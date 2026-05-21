@@ -151,7 +151,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .smc-obv{background:rgba(63,185,80,.1);color:var(--green)}
 .card-signals{font-size:.72rem;color:var(--text2);line-height:1.7}
 
-.card-patterns{font-size:.72rem;color:var(--yellow2);margin-top:6px;line-height:1.5}.card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
+.pattern-tag-wrap{display:flex;flex-wrap:wrap;gap:6px;line-height:1.6;margin-top:2px}
+.pt-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:.72rem;font-weight:700;border:1px solid transparent}
+.pt-bull{background:rgba(63,185,80,.15);color:#86efac;border-color:rgba(63,185,80,.35)}
+.pt-bear{background:rgba(248,81,73,.15);color:#fca5a5;border-color:rgba(248,81,73,.35)}
+.pt-neutral{background:rgba(139,148,158,.12);color:#d1d5db;border-color:rgba(139,148,158,.22)}
+.pt-empty{font-size:.76rem;color:var(--text3);padding:6px 0}
+.card-patterns{font-size:.72rem;color:var(--yellow2);margin-top:6px;line-height:1.45}
+.card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
 /* EMPTY */
 .empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
 .empty-icon{font-size:3rem;margin-bottom:12px}
@@ -1056,25 +1063,23 @@ function detectCandlePatterns(rows) {
 
 // ─── 在 calcIndicators 時一併計算並存入 ind ───
 function attachPatterns(rows, ind) {
-  // 取最近10根計算（效能優先）
-  const recent = rows.slice(-10).map(r => ({
-    O: r.O||r.open||r.o||r[1]||0,
-    H: r.H||r.high||r.h||r[2]||0,
-    L: r.L||r.low ||r.l||r[3]||0,
-    C: r.C||r.close||r.c||r[4]||0,
-  })).filter(r=>r.C>0);
+  const recent = rows.slice(-20).map(r => ({
+    O: r.o != null ? r.o : (r.O != null ? r.O : (r.open  != null ? r.open  : 0)),
+    H: r.h != null ? r.h : (r.H != null ? r.H : (r.high  != null ? r.high  : 0)),
+    L: r.l != null ? r.l : (r.L != null ? r.L : (r.low   != null ? r.low   : 0)),
+    C: r.c != null ? r.c : (r.C != null ? r.C : (r.close != null ? r.close : 0)),
+  })).filter(r => r.C > 0 && r.H > r.L);
   const result = detectCandlePatterns(recent);
-  ind.patternBuy    = result.buyScore;
-  ind.patternSell   = result.sellScore;
-  ind.patternNet    = result.netScore;
-  ind.patternLevel  = result.level;
-  ind.patternAdvice = result.advice;
-  ind.patternConf   = result.conf;
-  ind.patternSigs   = result.signals;
-  // ── K線型態識別（24種）──
-  if(typeof attachPatterns === 'function') {
-    try { attachPatterns(rows || [], ind); } catch(e){}
-  }
+  const objs = normalizePatternObjs(result.patternObjs || result.signals || []);
+  ind.patternObjs = objs;
+  ind.patterns = objs.map(x => x.name);
+  ind.patSigs = objs;
+  ind.patternBuy    = result.buyScore  != null ? result.buyScore  : 0;
+  ind.patternSell   = result.sellScore != null ? result.sellScore : 0;
+  ind.patternNet    = result.netScore  != null ? result.netScore  : 0;
+  ind.patternLevel  = result.level     != null ? result.level     : '─';
+  ind.patternAdvice = result.advice    != null ? result.advice    : '無形態';
+  ind.patternConf   = result.conf      != null ? result.conf      : '─';
   return ind;
 }
 
@@ -1122,7 +1127,7 @@ function scoreSymbol(rows, ind, symbol) {
   const pi = Math.max(0, i-1);
   const c  = ind.C[i];
   let buy=0, sell=0;
-  const signals=[], patterns=[], warnings=[];
+  const signals=[], patterns=[], warnings=[], patternObjs=[];
 
   // 1. SMC
   if(ind.smcSweepBull?.[i]) { buy  += W.smc_sweep; signals.push('🎯掃蕩多(Sweep)'); }
@@ -1747,19 +1752,49 @@ function renderCard(r){
     </div>
     ${smcTags ? `<div class="card-smc">${smcTags}</div>` : ''}
     <div class="card-signals">
-      ${r.patterns.join(' · ')}${r.patterns.length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
+      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>p.name).join(' · ')}${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
     </div>
-    <div class="card-patterns">
-      ${(()=>{
-        const p = (r.patSigs||[]).filter(s=>s && s.name);
-        if(!p.length) return '<span style="color:var(--text3)">型態：─</span>';
-        const top = p.slice(0,3).map(s=>`${s.emoji||'🕯️'}${s.name}`).join(' · ');
-        const more = p.length>3 ? ` +${p.length-3}` : '';
-        return `<span style="color:var(--yellow2)">型態：${top}${more}</span>`;
-      })()}
-    </div>
+    <div class="card-patterns">${renderPatternTags(r.patternObjs || r.patSigs || r.patterns || [], '─')}</div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
+}
+
+function patternToneClass(p){
+  const name = String(p?.name || p?.key || '').toLowerCase();
+  const dir = String(p?.dir || 'neutral').toLowerCase();
+  if(dir === 'buy' || /bull|多|向上|up|long|buy|hammer|dragonfly|triangleup|突破/.test(name)) return 'pt-bull';
+  if(dir === 'sell' || /bear|空|向下|down|short|sell|shooting|gravestone|triangledn/.test(name)) return 'pt-bear';
+  return 'pt-neutral';
+}
+
+function renderPatternTags(arr, emptyText='─') {
+  const p = normalizePatternObjs(arr);
+  if(!p.length) return `<span class="pt-empty">型態：${emptyText}</span>`;
+  return p.slice(0,6).map(x => `<span class="pt-tag ${patternToneClass(x)}">${x.emoji || '🕯️'}${x.name}</span>`).join('');
+}
+
+function normalizePatternObjs(src) {
+  const arr = Array.isArray(src) ? src : [];
+  return arr.map(x => {
+    if(typeof x === 'string') return { key:x, name:x, emoji:'🕯️', dir:'neutral', score:0, source:'candle' };
+    return {
+      key: x.key || x.id || x.code || x.name || 'PATTERN',
+      name: x.name || x.key || x.id || x.code || '型態',
+      emoji: x.emoji || '🕯️',
+      dir: x.dir || (typeof x.score === 'number' ? (x.score > 0 ? 'buy' : x.score < 0 ? 'sell' : 'neutral') : 'neutral'),
+      score: typeof x.score === 'number' ? x.score : 0,
+      source: x.source || 'candle',
+      ts: x.ts || null,
+    };
+  }).filter(x => x.name);
+}
+
+function renderPatternSummary(arr, emptyText='─') {
+  const p = normalizePatternObjs(arr);
+  if(!p.length) return `<span style="color:var(--text3)">型態：${emptyText}</span>`;
+  const top = p.slice(0,4).map(x => `${x.emoji}${x.name}`).join(' · ');
+  const more = p.length>4 ? ` +${p.length-4}` : '';
+  return `<span style="color:var(--yellow2)">型態：${top}${more}</span>`;
 }
 
 // ══════════════════════════
@@ -2024,9 +2059,9 @@ function showDetail(symbol){
       </div>
 
       <!-- 技術型態（近5根）-->
-      ${r.patterns.length ? `
+      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length ? `
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:4px">📐 技術型態（近5根）</div>
-      ${r.patterns.map(p=>`
+      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>`
         <div class="pattern-row ${p.includes('看漲')||p.includes('向上')||p.includes('多')?'bull':p.includes('看跌')||p.includes('向下')||p.includes('空')?'bear':'neu'}">
           <span>${p}</span>
           <span class="pattern-score" style="color:${p.includes('看漲')||p.includes('多')?'#34d399':p.includes('看跌')||p.includes('空')?'#f87171':'var(--text3)'}">
