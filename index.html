@@ -1754,7 +1754,12 @@ function renderCard(r){
     <div class="card-signals">
       ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>p.name).join(' · ')}${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
     </div>
-    <div class="card-patterns">${renderPatternTags(r.patternObjs || r.patSigs || r.patterns || [], '─')}</div>
+    <div class="card-patterns">${renderPatternTags(
+      r.patternObjs?.length ? r.patternObjs :
+      r.patSigs?.length ? r.patSigs :
+      r.patterns?.length ? r.patterns : [],
+      '─'
+    )}</div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
 }
