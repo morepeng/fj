@@ -1755,10 +1755,11 @@ function renderCard(r){
       ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>p.name).join(' · ')}${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length&&r.signals.length?' · ':''}${r.signals.join(' · ')}
     </div>
     <div class="card-patterns">${renderPatternTags(
-          normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []),
-          '─'
-        )}</div>    
-
+      r.patternObjs?.length ? r.patternObjs :
+      r.patSigs?.length ? r.patSigs :
+      r.patterns?.length ? r.patterns : [],
+      '─'
+    )}</div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
 }
@@ -2065,22 +2066,25 @@ function showDetail(symbol){
       <!-- 技術型態（近5根）-->
       ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length ? `
       <div style="font-size:.72rem;color:var(--text3);margin-bottom:4px">📐 技術型態（近5根）</div>
-      <div class="pattern-tag-wrap">
-        ${renderPatternTags(r.patternObjs || r.patSigs || r.patterns || [], '─')}
-      </div>
-      ` : ''}
+      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).map(p=>`
+        <div class="pattern-row ${p.includes('看漲')||p.includes('向上')||p.includes('多')?'bull':p.includes('看跌')||p.includes('向下')||p.includes('空')?'bear':'neu'}">
+          <span>${p}</span>
+          <span class="pattern-score" style="color:${p.includes('看漲')||p.includes('多')?'#34d399':p.includes('看跌')||p.includes('空')?'#f87171':'var(--text3)'}">
+            ${p.includes('看漲')||p.includes('多')?'+3':p.includes('看跌')||p.includes('空')?'-2':'─'}
+          </span>
+        </div>`).join('')}` : ''}
 
       <!-- K線型態（末根）-->
       <div style="font-size:.72rem;color:var(--text3);margin:8px 0 4px">🕯️ K線型態（末根）</div>
-      ${normalizePatternObjs(r.patternObjs || r.patSigs || r.patterns || []).length ? `
-      <div class="pattern-tag-wrap">
-        ${renderPatternTags(r.patternObjs || r.patSigs || r.patterns || [], '─')}
-      </div>
-      ` : `
-      <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>
-      `}
-      
-      
+      ${r.patSigs && r.patSigs.length ? r.patSigs.map(s=>`
+        <div class="pattern-row ${s.dir==='buy'?'bull':s.dir==='sell'?'bear':'neu'}">
+          <span>${s.emoji} ${s.name}</span>
+          <span class="pattern-score" style="color:${s.dir==='buy'?'#34d399':s.dir==='sell'?'#f87171':'var(--text3)'}">
+            ${s.dir==='buy'?'+':''}${s.score>=0?'+'+s.score:s.score}
+          </span>
+        </div>`).join('') : `
+        <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>`}
+
       <div style="font-size:.68rem;color:var(--text3);margin-top:8px">
         ※ 純JS算法，對應TA-Lib邏輯，但非完全等價
       </div>
