@@ -151,7 +151,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .smc-obv{background:rgba(63,185,80,.1);color:var(--green)}
 .card-signals{font-size:.72rem;color:var(--text2);line-height:1.7}
 
-.card-patterns{font-size:.72rem;color:var(--yellow2);margin-top:6px;line-height:1.5}.card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
+.card-patterns{font-size:.72rem;color:var(--yellow2);margin-top:6px;line-height:1.45}.card-warning{font-size:.7rem;color:var(--yellow2);margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)}
 /* EMPTY */
 .empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
 .empty-icon{font-size:3rem;margin-bottom:12px}
@@ -1751,11 +1751,11 @@ function renderCard(r){
     </div>
     <div class="card-patterns">
       ${(()=>{
-        const p = (r.patSigs||[]).filter(s=>s && s.name);
-        if(!p.length) return '<span style="color:var(--text3)">型態：─</span>';
-        const top = p.slice(0,3).map(s=>`${s.emoji||'🕯️'}${s.name}`).join(' · ');
-        const more = p.length>3 ? ` +${p.length-3}` : '';
-        return `<span style="color:var(--yellow2)">型態：${top}${more}</span>`;
+        const p = (r.patSigs||[]).filter(s=>s&&s.name);
+        if(!p.length) return '<span style=\"color:var(--text3)\">型態：─</span>';
+        const top = p.slice(0,4).map(s=>`${s.emoji||'🕯️'}${s.name}`).join(' · ');
+        const more = p.length>4 ? ` +${p.length-4}` : '';
+        return `<span style=\"color:var(--yellow2)\">型態：${top}${more}</span>`;
       })()}
     </div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
