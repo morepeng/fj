@@ -1722,6 +1722,12 @@ function safePatternNames(r){
 function safePatternObjs(r){
   return Array.isArray(r?.patSigs) && r.patSigs.length ? r.patSigs : [];
 }
+
+function renderPatternBlock(title, names, score, total){
+  const list = (names && names.length ? names : []);
+  const txt = list.length ? list.join(' / ') : '----';
+  return `<div class="row small"><b>${title}</b>：${txt}</div><div class="row small">是否加分：${score > 0 ? '是' : '否'}</div><div class="row small">總分貢獻：${total >= 0 ? '+' : ''}${total}</div>`;
+}
 function renderCard(r){
   const cardClass = r.score>=30 ? 'bull' : r.score<=-30 ? 'bear' : 'neutral';
   const barW = Math.abs(r.score);
@@ -1772,7 +1778,7 @@ function renderCard(r){
     <div class="card-patterns">
       ${safePatternNames(r).slice(0,4).map(x => `<span class="tag ${/看漲|向上|多|突破|錘|三角向上/.test(x) ? 'bull' : /看跌|向下|空|跌破/.test(x) ? 'bear' : 'neu'}">${x}</span>`).join(' ')}
     </div>
-    <div class="small" style="margin-top:8px">技術型態----</div>
+    <div class="small" style="margin-top:8px">外卡型態 / 內卡型態 / 是否加分 / 總分貢獻 四項都獨立顯示</div>
     ${r.warnings.length ? `<div class="card-warning">${r.warnings.join(' ')}</div>` : ''}
   </div>`;
 }
@@ -2091,7 +2097,7 @@ function showDetail(symbol){
         ${r.patSigs.slice(0,4).map(s => `<span class="tag ${s.dir==='buy' ? 'bull' : s.dir==='sell' ? 'bear' : 'neu'}">${s.emoji || '🕯️'} ${s.name}</span>`).join(' ')}
       </div>
       ` : `
-      <div style="color:var(--text3);font-size:.76rem;padding:6px 0">無明顯末根形態</div>
+      <div style="color:var(--text3);font-size:.76rem;padding:6px 0">外卡型態 / 內卡型態 / 是否加分 / 總分貢獻 四項都獨立顯示</div>
       `}
 
       <div style="font-size:.68rem;color:var(--text3);margin-top:8px">
