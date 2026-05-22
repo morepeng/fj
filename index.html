@@ -2228,12 +2228,18 @@ async function runScan(symbols){
     updateProgress(idx, symbols.length, `正在分析 ${sym}...`);
     try{
       const rows = await fetchOHLCV(sym, CFG.period, CFG.interval);
-      if(!rows || rows.length < CFG.minBars){
-        updateProgress(idx+1, symbols.length, `${sym} 數據不足，跳過`);
-        continue;
-      }
-      const ind = calcIndicators(rows);
-      const res = scoreSymbol(rows, ind, sym);
+            if(!rows || rows.length < CFG.minBars){
+              updateProgress(idx+1, symbols.length, `${sym} 數據不足，跳過`);
+              continue;
+            }
+            const ind = calcIndicators(rows);
+            
+            // 新增這行：執行 K 線型態分析，並將結果回寫到 ind 物件中
+            attachPatterns(rows, ind); 
+            
+            const res = scoreSymbol(rows, ind, sym);
+
+
       results.push(res);
       updateProgress(idx+1, symbols.length, `✅ ${sym} 評分：${res.score>0?'+':''}${res.score}`);
     } catch(e){
@@ -2422,3 +2428,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
      
 
  
+<div class="small">內卡</div>
+
+<div class="small"></div>
+
+<!-- 最近五根K線納入內卡技術分析，不只看最後一根 -->
