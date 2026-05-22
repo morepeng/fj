@@ -1128,6 +1128,377 @@ const W = {
   wyc_vol:8,      // 量能+價格關係
 };
 
+function scoreSymbol(rows, ind, symbol) {
+  const i  = ind.n - 1;
+  const pi = Math.max(0, i-1);
+  const c  = ind.C[i];
+  let buy=0, sell=0;
+  const signals=[], patterns=[], warnings=[], patternObjs=[];
+
+  // 1. SMC
+  if(ind.smcSweepBull?.[i]) { buy  += W.smc_sweep; signals.push('🎯掃蕩多(Sweep)'); }
+  if(ind.smcSweepBear?.[i]) { sell += W.smc_sweep; signals.push('🎯掃蕩空(Sweep)'); }
+  if(ind.smcFvgBull?.[i])   { buy  += W.smc_fvg;   signals.push('⚡FVG多(位移)'); }
+  if(ind.smcFvgBear?.[i])   { sell += W.smc_fvg;   signals.push('⚡FVG空(位移)'); }
+  if(ind.smcChochBull?.[i]) { buy  += W.smc_choch;  signals.push('🔄CHoCH翻多'); }
+  if(ind.smcChochBear?.[i]) { sell += W.smc_choch;  signals.push('🔄CHoCH翻空'); }
+  if(ind.obvTrendUp?.[i])   { buy  += 8;            signals.push('OBV資金流入'); }
+  else if(ind.obvTrendDown?.[i]){ sell += 8;         signals.push('OBV資金流出'); }
+
+  // 2. HMA Cross
+  const h9=ind.hma9[i], h21=ind.hma21[i], ph9=ind.hma9[pi], ph21=ind.hma21[pi];
+  if(!isNaN(h9)&&!isNaN(h21)&&!isNaN(ph9)&&!isNaN(ph21)){
+    if(h9>h21 && ph9<=ph21)      { buy  += W.hma_cross; signals.push('⚡HMA黃金交叉'); }
+    else if(h9<h21 && ph9>=ph21) { sell += W.hma_cross; signals.push('⚡HMA死亡交叉'); }
+    else if(h9>h21) buy  += Math.floor(W.hma_cross/2);
+    else            sell += Math.floor(W.hma_cross/2);
+  }
+
+  // 3. BB Squeeze
+  const sq=ind.bbSq[i], psq=ind.bbSq[pi];
+  if(psq && !sq){
+    if(ind.roc1[i]>0) { buy  += W.squeeze; signals.push('⚡BB擠壓→向上爆發'); }
+    else              { sell += W.squeeze; signals.push('⚡BB擠壓→向下爆發'); }
+  } else if(sq) signals.push('⏳BB擠壓蓄積中');
+
+  // 4. ADX + DI
+  const adxV=ind.adx[i]||20;
+  if(ind.diCrossUp[i] && adxV>20)      { buy  += W.adx_di; signals.push(`⚡DI交叉多(ADX=${adxV.toFixed(1)})`); }
+  else if(ind.diCrosDn[i] && adxV>20)  { sell += W.adx_di; signals.push(`⚡DI交叉空(ADX=${adxV.toFixed(1)})`); }
+  else if(ind.diP[i]>ind.diM[i] && adxV>25) buy  += Math.floor(W.adx_di/2);
+  else if(ind.diM[i]>ind.diP[i] && adxV>25) sell += Math.floor(W.adx_di/2);
+
+  // 5. EMA System
+  const e9=ind.ema9[i], e21=ind.ema21[i], e55=ind.ema55[i];
+  if(!isNaN(e9)&&!isNaN(e21)&&!isNaN(e55)){
+    if(e9>e21 && e21>e55) { buy  += W.ema_sys; signals.push('EMA多頭排列'); }
+    else if(e9<e21 && e21<e55) { sell += W.ema_sys; signals.push('EMA空頭排列'); }
+  }
+  if(c>e9) buy+=5; else sell+=5;
+
+  // 6. Candle Patterns
+  if(ind.bullPin[i])    { buy  += W.pinbar;   patterns.push('⚡看漲PinBar'); }
+  if(ind.bearPin[i])    { sell += W.pinbar;   patterns.push('⚡看跌PinBar'); }
+  if(ind.bullEngulf[i]) { buy  += W.engulf;   patterns.push('⚡看漲吞噬'); }
+  if(ind.bearEngulf[i]) { sell += W.engulf;   patterns.push('⚡看跌吞噬'); }
+  if(ind.dragonfly[i])  { buy  += 8;          patterns.push('蜻蜓Doji(多)'); }
+  if(ind.gravestone[i]) { sell += 8;          patterns.push('墓碑Doji(空)'); }
+  if(ind.triBreakUp[i]) { buy  += W.triangle; patterns.push('⚡三角向上突破'); }
+  if(ind.triBreakDn[i]) { sell += W.triangle; patterns.push('⚡三角向下突破'); }
+  if(ind.ibBreakUp[i])  { buy  += 10;         patterns.push('⚡IB突破向上'); }
+  if(ind.ibBreakDn[i])  { sell += 10;         patterns.push('⚡IB突破向下'); }
+  if(ind.strongBull[i]) { buy  += 8;          patterns.push('強勢陽線+放量'); }
+  if(ind.strongBear[i]) { sell += 8;          patterns.push('強勢陰線+放量'); }
+
+  // 7. MACD
+  const mh=ind.macdHist[i], pmh=ind.macdHist[pi];
+  if(!isNaN(mh)&&!isNaN(pmh)){
+    if(mh>0 && pmh<=0)      { buy  += W.macd; signals.push('⚡MACD翻正'); }
+    else if(mh<0 && pmh>=0) { sell += W.macd; signals.push('⚡MACD翻負'); }
+    else if(mh>0 && mh>pmh) buy  += Math.floor(W.macd/2);
+    else if(mh<0 && mh<pmh) sell += Math.floor(W.macd/2);
+  }
+
+  // 8. CCI
+  const cciV=ind.cci[i]||0, pcci=ind.cci[pi]||0;
+  if(cciV>0 && pcci<=0) buy  += Math.floor(W.cci/2);
+  else if(cciV<0 && pcci>=0) sell += Math.floor(W.cci/2);
+  if(cciV < -150) { buy  += W.cci; signals.push(`⚡CCI超賣(${cciV.toFixed(0)})`); }
+  else if(cciV > 150) { sell += W.cci; signals.push(`⚡CCI超買(${cciV.toFixed(0)})`); }
+
+  // 9. TRIX
+  const tx=ind.trix[i]||0, ts=ind.trixSig[i]||0, ptx=ind.trix[pi]||0, pts=ind.trixSig[pi]||0;
+  if(tx>ts && ptx<=pts)      { buy  += W.trix; signals.push('TRIX黃金交叉'); }
+  else if(tx<ts && ptx>=pts) { sell += W.trix; signals.push('TRIX死亡交叉'); }
+
+  // 10. RSI
+  const rsiV=ind.rsi[i]||50, prsi=ind.rsi[pi]||50;
+  if(rsiV>=30 && prsi<30)      { buy  += W.rsi; signals.push(`⚡RSI超賣回升(${rsiV.toFixed(1)})`); }
+  else if(rsiV<=70 && prsi>70) { sell += W.rsi; signals.push(`⚡RSI超買回落(${rsiV.toFixed(1)})`); }
+  else if(rsiV<35) buy  += Math.floor(W.rsi/2);
+  else if(rsiV>65) sell += Math.floor(W.rsi/2);
+
+  // 11. Donchian
+  if(!isNaN(ind.dc20Up[i]) && c>=ind.dc20Up[i]) { buy  += W.donchian; signals.push('⚡突破Donchian高點'); }
+  else if(!isNaN(ind.dc20Dn[i]) && c<=ind.dc20Dn[i]) { sell += W.donchian; signals.push('⚡跌破Donchian低點'); }
+
+  // 12. Aroon & CMF
+  const arV=ind.aroonOsc[i]||0;
+  if(arV>50) buy  += Math.floor(W.aroon/2);
+  else if(arV<-50) sell += Math.floor(W.aroon/2);
+  const cmfV=ind.cmf[i]||0;
+  if(cmfV>0.15)       { buy  += W.cmf; signals.push(`CMF流入(${cmfV.toFixed(3)})`); }
+  else if(cmfV<-0.15) { sell += W.cmf; signals.push(`CMF流出(${cmfV.toFixed(3)})`); }
+
+  // 13. Williams %R
+  const wrV=ind.willr[i]||(-50), pwr=ind.willr[pi]||(-50);
+  if(wrV>=-20 && pwr<-20)      { sell += W.willr; signals.push(`WillR超買(${wrV.toFixed(0)})`); }
+  else if(wrV<=-80 && pwr>-80) { buy  += W.willr; signals.push(`WillR超賣(${wrV.toFixed(0)})`); }
+
+  // 14. Stochastic KD
+  const sk=ind.stochK[i]||50, sd=ind.stochD[i]||50;
+  const psk=ind.stochK[pi]||50, psd=ind.stochD[pi]||50;
+  if(sk>sd && psk<=psd && sk<80) buy  += W.kd;
+  else if(sk<sd && psk>=psd && sk>20) sell += W.kd;
+
+  // 15. Volume & VWAP & Elder
+  const vcV=ind.volConf[i]||0, vrV=ind.volRatio[i]||1;
+  if(vcV===1)       { buy  += W.volume; signals.push(`放量上漲(${vrV.toFixed(1)}x)`); }
+  else if(vcV===-1) { sell += W.volume; signals.push(`放量下跌(${vrV.toFixed(1)}x)`); }
+  const vwapV=ind.vwap[i]||c;
+  if(c>vwapV*1.001) buy  += W.vwap;
+  else if(c<vwapV*0.999) sell += W.vwap;
+  const efV=ind.elderE[i]||0;
+  if(efV>0) buy  += W.elder;
+  else if(efV<0) sell += W.elder;
+
+  // 16. Chop
+  const chopV=ind.chop[i]||50;
+  if(chopV<38.2){
+    const tot=buy+sell+1;
+    buy  += Math.floor(W.chop*(buy/tot));
+    sell += Math.floor(W.chop*(sell/tot));
+  } else if(chopV>61.8){
+    buy  = Math.floor(buy*0.7);
+    sell = Math.floor(sell*0.7);
+    warnings.push(`⚠震盪行情(Chop=${chopV.toFixed(1)})`);
+  }
+
+  // 17. Session
+  const [sesMult, sessName] = getSessionMult(symbol);
+  if(sesMult<0.7){
+    buy  = Math.floor(buy*sesMult);
+    sell = Math.floor(sell*sesMult);
+    warnings.push(`⚠休市/${sessName}`);
+  } else if(sesMult>=1.1){
+    buy  += W.session;
+    sell += W.session;
+  }
+
+  // 18. ATR extreme
+  const atrPctV=ind.atrPct[i]||0.5;
+  if(atrPctV>0.92){
+    warnings.push(`⚠ATR極端波動(${(atrPctV*100).toFixed(0)}%)`);
+    buy  = Math.floor(buy*0.5);
+    sell = Math.floor(sell*0.5);
+  }
+
+  // Final Score
+  const net = buy - sell;
+  // ══════════════════════════════
+  // 【道氏理論】趨勢結構確認
+  // ══════════════════════════════
+  // 計算最近3個 Swing High / Swing Low
+  const H = ind.H, L = ind.L, C = ind.C, n = ind.n;
+  const lookN = Math.min(60, n-1);
+  let swingHi=[], swingLo=[];
+  for(let k=2; k<lookN-1; k++){
+    const idx2=n-1-k;
+    if(H[idx2]>H[idx2-1]&&H[idx2]>H[idx2+1]) swingHi.push(H[idx2]);
+    if(L[idx2]<L[idx2-1]&&L[idx2]<L[idx2+1]) swingLo.push(L[idx2]);
+  }
+  const hh = swingHi.length>=2 && swingHi[0]>swingHi[1]; // Higher High
+  const hl = swingLo.length>=2 && swingLo[0]>swingLo[1]; // Higher Low
+  const lh = swingHi.length>=2 && swingHi[0]<swingHi[1]; // Lower High
+  const ll = swingLo.length>=2 && swingLo[0]<swingLo[1]; // Lower Low
+
+  // 道氏趨勢結構（14分）
+  if(hh && hl){
+    buy  += W.dow_trend; signals.push('📈道氏多頭(HH+HL)');
+  } else if(lh && ll){
+    sell += W.dow_trend; signals.push('📉道氏空頭(LH+LL)');
+  } else if(hh || hl){
+    buy  += Math.floor(W.dow_trend*0.5);
+  } else if(lh || ll){
+    sell += Math.floor(W.dow_trend*0.5);
+  }
+
+  // 道氏趨勢三階段（10分）：初升/主升/末升 vs 初跌/主跌/末跌
+  // 以RSI+MACD+ADX組合判斷階段
+  const rsiNow = (ind.rsi && !isNaN(ind.rsi[i])) ? ind.rsi[i] : 50;
+  const adxNow = (ind.adx && !isNaN(ind.adx[i])) ? ind.adx[i] : 0;
+  if(hh && hl && adxNow>25 && rsiNow>50 && rsiNow<70){
+    buy  += W.dow_phase; signals.push('📈道氏主升段（ADX強+RSI健康）');
+  } else if(ll && lh && adxNow>25 && rsiNow<50 && rsiNow>30){
+    sell += W.dow_phase; signals.push('📉道氏主跌段');
+  } else if(hh && hl && rsiNow<55){
+    buy  += Math.floor(W.dow_phase*0.6); signals.push('📈道氏初升段');
+  } else if(lh && ll && rsiNow>45){
+    sell += Math.floor(W.dow_phase*0.6); signals.push('📉道氏初跌段');
+  }
+
+  // 道氏量能確認（8分）：趨勢方向需量能配合
+  const volNow = (ind.volRatio && !isNaN(ind.volRatio[i])) ? ind.volRatio[i] : 1;
+  if(hh && hl && volNow>1.1){
+    buy  += W.dow_vol; signals.push('📊道氏量增確認多頭');
+  } else if(lh && ll && volNow>1.1){
+    sell += W.dow_vol; signals.push('📊道氏量增確認空頭');
+  } else if((hh||hl) && volNow<0.8){
+    warnings.push('⚠道氏量縮多頭（可信度降）');
+  }
+
+  // ══════════════════════════════
+  // 【威科夫理論】機構吸籌/出貨辨識
+  // ══════════════════════════════
+  // 威科夫四階段辨識：積累(Acc) → 上升(MarkUp) → 派發(Dist) → 下跌(MarkDn)
+  // 用價格位置 + ATR + 量能 + 結構綜合判斷
+  const atrNow = (ind.atr && !isNaN(ind.atr[i])) ? ind.atr[i] : 0;
+  const cmfNow = (ind.cmf && !isNaN(ind.cmf[i])) ? ind.cmf[i] : 0;
+  const chopNow= (ind.chop && !isNaN(ind.chop[i])) ? ind.chop[i] : 50;
+
+  // 威科夫階段判斷
+  let wycPhase = 'Unknown';
+  if(chopNow > 61.8 && cmfNow > 0.05 && volNow > 0.8 && rsiNow < 55){
+    wycPhase = 'Accumulation'; // 橫盤+資金流入+低RSI → 積累
+  } else if(hh && hl && chopNow < 50 && cmfNow > 0){
+    wycPhase = 'MarkUp';       // 趨勢上漲+資金流入 → 上升段
+  } else if(chopNow > 61.8 && cmfNow < -0.05 && rsiNow > 55){
+    wycPhase = 'Distribution'; // 橫盤+資金流出+高RSI → 派發
+  } else if(lh && ll && chopNow < 50 && cmfNow < 0){
+    wycPhase = 'MarkDown';     // 趨勢下跌+資金流出 → 下跌段
+  }
+
+  // 威科夫階段評分（14分）
+  if(wycPhase==='Accumulation'){
+    buy  += W.wyc_phase; signals.push('🏦威科夫積累(Accumulation)→看漲');
+  } else if(wycPhase==='MarkUp'){
+    buy  += W.wyc_phase; signals.push('🚀威科夫上升段(Mark Up)');
+  } else if(wycPhase==='Distribution'){
+    sell += W.wyc_phase; signals.push('🏦威科夫派發(Distribution)→看跌');
+  } else if(wycPhase==='MarkDown'){
+    sell += W.wyc_phase; signals.push('📉威科夫下跌段(Mark Down)');
+  }
+
+  // 威科夫 Spring / UTAD（12分）
+  // Spring：跌破支撐後急速反彈（掃低點+反彈）→ 最佳買點
+  // UTAD：突破壓力後急跌（掃高點+回落）→ 最佳賣點
+  const smcSweepB = ind.smcSweepBull?.[i] ?? false;
+  const smcSweepBr= ind.smcSweepBear?.[i] ?? false;
+  if(smcSweepB && (wycPhase==='Accumulation'||wycPhase==='MarkUp')){
+    buy  += W.wyc_spring; signals.push('🌱威科夫Spring（最佳買點）');
+  } else if(smcSweepBr && (wycPhase==='Distribution'||wycPhase==='MarkDown')){
+    sell += W.wyc_spring; signals.push('🌊威科夫UTAD（最佳賣點）');
+  } else if(smcSweepB && rsiNow < 40){
+    buy  += Math.floor(W.wyc_spring*0.7); signals.push('🌱威科夫Spring候選');
+  } else if(smcSweepBr && rsiNow > 60){
+    sell += Math.floor(W.wyc_spring*0.7); signals.push('🌊威科夫UTAD候選');
+  }
+
+  // 威科夫量能關係（8分）
+  // 積累階段：量縮+橫盤=正常吸籌；量增反彈=確認
+  // 派發階段：量縮+橫盤=正常出貨；量增下跌=確認
+  if((wycPhase==='Accumulation') && cmfNow>0.1){
+    buy  += W.wyc_vol; signals.push('📊威科夫CMF+吸籌確認');
+  } else if((wycPhase==='Distribution') && cmfNow<-0.1){
+    sell += W.wyc_vol; signals.push('📊威科夫CMF+出貨確認');
+  } else if(wycPhase==='MarkUp' && ind.obvSlope?.[i] > 0){
+    buy  += Math.floor(W.wyc_vol*0.7);
+  } else if(wycPhase==='MarkDown' && ind.obvSlope?.[i] < 0){
+    sell += Math.floor(W.wyc_vol*0.7);
+  }
+
+  const maxTotal = 160; // ★校準分母：真實優質訊號合理總分（原277→160），道氏/威科夫已納入
+  const score = Math.round(clip(net/maxTotal*100, -100, 100));
+
+  // Direction
+  let dir, dirClass, posMult;
+  const th=CFG.threshold, st=CFG.strong;
+  if     (score >= st)  { dir='🚀強烈做多'; dirClass='dir-sb'; posMult=1.0; }
+  else if(score >= th)  { dir='🟢做多';     dirClass='dir-b';  posMult=0.7; }
+  else if(score >= 30)  { dir='🟡偏多觀望'; dirClass='dir-wb'; posMult=0.3; }
+  else if(score <= -st) { dir='🔴強烈做空'; dirClass='dir-ss'; posMult=1.0; }
+  else if(score <= -th) { dir='🔴做空';     dirClass='dir-s';  posMult=0.7; }
+  else if(score <= -30) { dir='🟠偏空觀望'; dirClass='dir-ws'; posMult=0.3; }
+  else                  { dir='⚪觀望';     dirClass='dir-n';  posMult=0.0; }
+
+  // SL / TP
+  const atrV   = ind.atr[i] || c*0.003;
+  const keyRes = ind.keyRes[i] || c*1.005;
+  const keySup = ind.keySup[i] || c*0.995;
+  let sl, tp1, tp2;
+  if(score >= 0){
+    sl  = Math.max(+(c - atrV*CFG.atrSL).toFixed(4),  +(keySup*0.999).toFixed(4));
+    tp1 = +(c + atrV*CFG.atrTP1).toFixed(4);
+    tp2 = Math.min(+(c + atrV*CFG.atrTP2).toFixed(4), +(keyRes*1.001).toFixed(4));
+  } else {
+    sl  = Math.min(+(c + atrV*CFG.atrSL).toFixed(4),  +(keyRes*1.001).toFixed(4));
+    tp1 = +(c - atrV*CFG.atrTP1).toFixed(4);
+    tp2 = Math.max(+(c - atrV*CFG.atrTP2).toFixed(4), +(keySup*0.999).toFixed(4));
+  }
+  const r = +( Math.abs(c-tp1) / (Math.abs(c-sl)+1e-10) ).toFixed(2);
+  if(r < CFG.minR && Math.abs(score)>=th) warnings.push(`⚠風報比不足(${r}<${CFG.minR})`);
+
+  // Position
+  let pos = {amount:0, kelly:0, shares:0};
+  if(posMult>0 && Math.abs(score)>=th){
+    pos = calcPosition(CFG.equity, CFG.riskPct*posMult, c, sl, 0.52+Math.abs(score)*0.001, r);
+  }
+
+  const maxHold = `${CFG.maxBars*15}分鐘`;
+  let timing;
+  if     (score >= st)  timing='積極進場（當根收盤後）';
+  else if(score >= th)  timing='等下根K棒確認再進';
+  else if(score <= -st) timing='積極做空（當根收盤後）';
+  else if(score <= -th) timing='等下根K棒確認做空';
+  else                  timing='觀望，等明確方向';
+
+  const regime = chopV<38.2 ? 'Trending' : chopV>61.8 ? 'Choppy' : 'Transitioning';
+  const barTime = rows[rows.length-1].t.toISOString().slice(0,16).replace('T',' ');
+
+  return {
+    symbol, barTime, close:c,
+    dir, dirClass, score, buy, sell,
+    timing, sl, tp1, tp2, r, maxHold,
+    pos,
+    // ── K線型態評分（從 ind 取出）──
+    patBuy:    ind.patternBuy  ?? 0,
+    patSell:   ind.patternSell ?? 0,
+    patNet:    +(((ind.patternBuy??0)-(ind.patternSell??0)).toFixed(1)),
+    patLevel:  ind.patternLevel  ?? '─',
+    patAdvice: ind.patternAdvice ?? '形態計算中',
+    patConf:   ind.patternConf   ?? '─',
+    patSigs:   ind.patternSigs   ?? [],
+    posAmount: pos.amount,
+    posKelly:  pos.kelly,
+    posShares: pos.shares,
+    posLabel: (()=>{
+      if(pos.amount<=0) return '─（觀望）';
+      const pct = Math.round(pos.amount/CFG.equity*100);
+      return pct + '% · ' + pos.amount.toLocaleString() + '元';
+    })(),
+    atrV, adxV,
+    rsiV, cciV, wrV, txVal:tx, cmfV, arV,
+    chopV, regime,
+    bbSqueeze: sq ? '⚡蓄積中' : '─',
+    keyRes, keySup,
+    patterns: patterns.slice(0,4),
+    signals:  signals.slice(0,6),
+    warnings,
+    // detail data
+    ind, rows,
+    smcSweepBull: ind.smcSweepBull?.[i],
+    smcSweepBear: ind.smcSweepBear?.[i],
+    smcFvgBull:   ind.smcFvgBull?.[i],
+    smcFvgBear:   ind.smcFvgBear?.[i],
+    smcChochBull: ind.smcChochBull?.[i],
+    smcChochBear: ind.smcChochBear?.[i],
+    obvUp:        ind.obvTrendUp?.[i],
+    obvDn:        ind.obvTrendDown?.[i],
+    pivP:  ind.pivP[i],
+    r1Fib: ind.r1Fib[i], s1Fib: ind.s1Fib[i],
+    r2Fib: ind.r2Fib[i], s2Fib: ind.s2Fib[i],
+    r3Fib: ind.r3Fib[i], s3Fib: ind.s3Fib[i],
+    r1Cam: ind.r1Cam[i], s1Cam: ind.s1Cam[i],
+    r4Cam: ind.r4Cam[i], s4Cam: ind.s4Cam[i],
+    diP: ind.diP[i], diM: ind.diM[i],
+    vwapV: ind.vwap[i],
+    dc20Up: ind.dc20Up[i], dc20Dn: ind.dc20Dn[i],
+    // ── OTE 斐波那契入場區 ──
+    oteHtml: buildOteHtml(ind, i, buy, sell, score, c),
+    // ── Confluence 匯合檢查清單 ──
+    confHtml: buildConfHtml(ind, i, buy, sell),
+  };
+}
 
 // ══════════════════════════════════════════
 // OTE 斐波那契入場區建構器
@@ -1857,13 +2228,18 @@ async function runScan(symbols){
     updateProgress(idx, symbols.length, `正在分析 ${sym}...`);
     try{
       const rows = await fetchOHLCV(sym, CFG.period, CFG.interval);
-      if(!rows || rows.length < CFG.minBars){
-        updateProgress(idx+1, symbols.length, `${sym} 數據不足，跳過`);
-        continue;
-      }
-      const ind = calcIndicators(rows);
-      attachPatterns(rows, ind);
-        const res = scoreSymbol(rows, ind, sym);
+            if(!rows || rows.length < CFG.minBars){
+              updateProgress(idx+1, symbols.length, `${sym} 數據不足，跳過`);
+              continue;
+            }
+            const ind = calcIndicators(rows);
+            
+            // 新增這行：執行 K 線型態分析，並將結果回寫到 ind 物件中
+            attachPatterns(rows, ind); 
+            
+            const res = scoreSymbol(rows, ind, sym);
+
+
       results.push(res);
       updateProgress(idx+1, symbols.length, `✅ ${sym} 評分：${res.score>0?'+':''}${res.score}`);
     } catch(e){
@@ -2055,3 +2431,5 @@ document.addEventListener('DOMContentLoaded', ()=>{
 <div class="small">內卡</div>
 
 <div class="small"></div>
+
+<!-- 最近五根K線納入內卡技術分析，不只看最後一根 -->
