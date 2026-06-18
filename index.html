@@ -37,7 +37,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
 .main{flex:1;padding:18px 24px;max-width:1600px;margin:0 auto;width:100%}
 .disclaimer{background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.2);border-radius:var(--radius);padding:9px 14px;font-size:.75rem;color:var(--yellow2);margin-bottom:16px;display:flex;gap:8px}
-/* SMC Info Panel */
 .smc-info-panel{background:rgba(88,166,255,.05);border:1px solid rgba(88,166,255,.2);border-radius:var(--radius2);margin-bottom:16px;overflow:hidden}
 .smc-info-toggle{display:flex;align-items:center;gap:10px;padding:11px 16px;cursor:pointer;user-select:none;transition:background .2s}
 .smc-info-toggle:hover{background:rgba(88,166,255,.08)}
@@ -60,7 +59,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:
 .smc-card{background:var(--bg3);border-radius:var(--radius);padding:10px 12px}
 .smc-card-title{font-size:.75rem;font-weight:700;color:var(--blue);margin-bottom:4px}
 .smc-card-body{font-size:.73rem;color:var(--text2);line-height:1.6}
-/* CONTROL PANEL */
 .control-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:18px;margin-bottom:18px}
 .control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:end}
 .form-group{display:flex;flex-direction:column;gap:5px}
@@ -871,14 +869,12 @@ function calcIndicators(rows) {
   const obvTrendUp   = obv.map((_,i) => !isNaN(obvMa[i]) && obv[i]>obvMa[i]);
   const obvTrendDown = obv.map((_,i) => !isNaN(obvMa[i]) && obv[i]<obvMa[i]);
 
-  // ══════ 新增：OB (訂單塊) 邏輯 ══════
   const obBull = new Array(n).fill(false);
   const obBear = new Array(n).fill(false);
   let lastBullObH=NaN, lastBullObL=NaN;
   let lastBearObH=NaN, lastBearObL=NaN;
 
   for(let i=3; i<n; i++){
-    // 尋找造成多頭失衡(FVG)前的最後反向(陰)線作為看漲OB
     if(smcFvgBull[i]){
       let obIdx = i-2;
       for(let j=i-2; j>=Math.max(0, i-5); j--){
@@ -886,7 +882,6 @@ function calcIndicators(rows) {
       }
       lastBullObH = H[obIdx]; lastBullObL = L[obIdx];
     }
-    // 尋找造成空頭失衡(FVG)前的最後反向(陽)線作為看跌OB
     if(smcFvgBear[i]){
       let obIdx = i-2;
       for(let j=i-2; j>=Math.max(0, i-5); j--){
@@ -894,12 +889,10 @@ function calcIndicators(rows) {
       }
       lastBearObH = H[obIdx]; lastBearObL = L[obIdx];
     }
-    // 判定當前K棒是否回測有效OB
     if(!isNaN(lastBullObH) && L[i] <= lastBullObH && C[i] > lastBullObL) obBull[i] = true;
     if(!isNaN(lastBearObL) && H[i] >= lastBearObL && C[i] < lastBearObH) obBear[i] = true;
   }
 
-  // ══════ 新增：折價/溢價區 與 OTE (絕佳進場區) 邏輯 ══════
   const isDiscount = new Array(n).fill(false);
   const isPremium  = new Array(n).fill(false);
   const isOteBull  = new Array(n).fill(false);
@@ -908,7 +901,6 @@ function calcIndicators(rows) {
   for(let i=30; i<n; i++){
     let maxH = -Infinity, minL = Infinity;
     let maxIdx = -1, minIdx = -1;
-    // 取近30根波段找出最新 Swing High / Low
     for(let j=i-30; j<=i; j++){
        if(H[j] > maxH){ maxH = H[j]; maxIdx = j; }
        if(L[j] < minL){ minL = L[j]; minIdx = j; }
@@ -919,13 +911,11 @@ function calcIndicators(rows) {
     if(C[i] < eq) isDiscount[i] = true;
     if(C[i] > eq) isPremium[i]  = true;
 
-    // OTE 看多：最近的推動浪是向上 (minIdx 在 maxIdx 之前)，目前正在向下回撤
     if(minIdx < maxIdx && maxIdx < i){
       let oteTop = maxH - range * 0.618;
       let oteBot = maxH - range * 0.786;
       if(L[i] <= oteTop && C[i] >= oteBot) isOteBull[i] = true;
     }
-    // OTE 看空：最近的推動浪是向下 (maxIdx 在 minIdx 之前)，目前正在向上反彈
     if(maxIdx < minIdx && minIdx < i){
       let oteBot = minL + range * 0.618;
       let oteTop = minL + range * 0.786;
@@ -964,9 +954,6 @@ function calcIndicators(rows) {
   };
 }
 
-// ════════════════════════════════
-// K線形態識別 — 61種完整版
-// ════════════════════════════════
 function calcCandlePatterns(rows) {
   const n=rows.length;
   const O=rows.map(r=>r.o), H=rows.map(r=>r.h), L=rows.map(r=>r.l), C=rows.map(r=>r.c);
@@ -1487,7 +1474,6 @@ function scoreSymbol(rows, ind, dow, wyck, pats, symbol) {
   if(ind.obvTrendUp[i])    { buy  += 8;            signals.push('OBV 資金流入'); }
   else if(ind.obvTrendDown[i]){ sell += 8;         signals.push('OBV 資金流出'); }
 
-  // ── 新增：OB 與 OTE 折溢價區計分 ──
   if(ind.obBull[i]) { buy += W.smc_ob; signals.push('📦回踩看漲OB(訂單塊)'); }
   if(ind.obBear[i]) { sell += W.smc_ob; signals.push('📦回踩看跌OB(訂單塊)'); }
   
@@ -1495,7 +1481,6 @@ function scoreSymbol(rows, ind, dow, wyck, pats, symbol) {
   else if(ind.isOteBear[i] && ind.isPremium[i]) { sell += W.smc_ote; signals.push('🎯絕佳進場區(OTE空) + 溢價區'); }
   else if(ind.isDiscount[i] && (buy > sell)) { buy += W.smc_zone; signals.push('🏷️位於折價區(利多)'); }
   else if(ind.isPremium[i] && (sell > buy))  { sell += W.smc_zone; signals.push('🏷️位於溢價區(利空)'); }
-
 
   const h9=ind.hma9[i], h21=ind.hma21[i], ph9=ind.hma9[pi], ph21=ind.hma21[pi];
   if(!isNaN(h9)&&!isNaN(h21)&&!isNaN(ph9)&&!isNaN(ph21)){
@@ -1858,7 +1843,7 @@ function renderCard(r){
     r.obvDn       ?'<span class="smc-tag smc-obv">OBV↓</span>'       :'',
   ].filter(Boolean).join('');
 
-  const patTags = (r.patNet && Math.abs(r.patNet)>=2.0 && r.patDet && r.patDet.length)
+  const patTags = (r.patDet && r.patDet.length)
     ? r.patDet.slice(0,3).map(p=>`<span class="smc-tag" style="background:rgba(255,170,0,.13);color:#ffaa00;border:1px solid rgba(255,170,0,.25)">${p}</span>`).join('')
     : '';
   const smcPatRow = smcTags||patTags
@@ -1876,7 +1861,6 @@ function renderCard(r){
   const wyckTag = r.wyckPhase!=='─'
     ? `<span class="wyck-badge">${r.wyckLabel}</span>` : '';
 
-  // 訊號文字：完整呈現所有分數累加項
   const techSigs = r.signals;
 
   return `
@@ -2049,6 +2033,21 @@ function showDetail(symbol){
       </div>
     </div>`;
 
+  // ── 新增：K線詳細分數與 AI 建議 ──
+  const klineDetailsHtml = `
+    <div class="detail-section">
+      <div class="detail-section-title">🕯️ K線形態與 AI 建議 (61種)</div>
+      <div class="detail-row"><span class="detail-key">多方權重 (Pattern_Buy_Score)</span><span class="detail-val dv-green">${r.patBuy}</span></div>
+      <div class="detail-row"><span class="detail-key">空方權重 (Pattern_Sell_Score)</span><span class="detail-val dv-red">${r.patSell}</span></div>
+      <div class="detail-row"><span class="detail-key">形態淨分 (Net_Score)</span><span class="detail-val ${r.patNet>0?'dv-green':r.patNet<0?'dv-red':'dv-yellow'}">${r.patNet>0?'+':''}${r.patNet}</span></div>
+      <div class="detail-row"><span class="detail-key">偵測形態 (Detected)</span><span class="detail-val dv-purple" style="font-size:0.75rem">${r.patDet.join(' | ') || '無明顯重要形態'}</span></div>
+      <div class="detail-row" style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--border); align-items:flex-start;">
+        <span class="detail-key">AI 智能建議</span>
+        <span class="detail-val" style="font-size:0.75rem; color:var(--text); text-align:right;">${r.patAdv}<br><span style="color:var(--text3)">信心度：${r.patConf}</span></span>
+      </div>
+    </div>
+  `;
+
   document.getElementById('modalTitle').textContent = `${symbol} — 三框架詳細分析 (${r.barTime})`;
   document.getElementById('modalBody').innerHTML = `
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
@@ -2092,9 +2091,9 @@ function showDetail(symbol){
         <div class="detail-row"><span class="detail-key">ATR</span><span class="detail-val">${fmt4(r.atrV)}</span></div>
         <div class="detail-row"><span class="detail-key">三法壓力</span><span class="detail-val dv-red">${fmt4(r.keyRes)}</span></div>
         <div class="detail-row"><span class="detail-key">三法支撐</span><span class="detail-val dv-green">${fmt4(r.keySup)}</span></div>
-        <div class="detail-row"><span class="detail-key">K線形態</span><span class="detail-val dv-purple">${r.patterns.join(' | ')||'─'}</span></div>
-        <div class="detail-row"><span class="detail-key">形態 AI 建議</span><span class="detail-val dv-purple" style="font-size:0.7rem;text-align:right">${r.patAdv} (信心: ${r.patConf})</span></div>
       </div>
+
+      ${klineDetailsHtml}
 
       <div class="detail-section">
         <div class="detail-section-title">💰 交易決策</div>
