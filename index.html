@@ -1089,11 +1089,25 @@ function calcCandlePatterns(rows) {
     }
   }
 
-  const last=n-1;
-  const netScore=+(buyScore[last]-sellScore[last]).toFixed(1);
-  const allPats=detected[last].filter(Boolean).slice(0,6);
-  const rBuy=+buyScore[last].toFixed(1), rSell=+sellScore[last].toFixed(1);
+// ── 改為：往前掃描最近 3 根 K 棒的形態累積 ──
+  const lookback = 3; 
+  let rBuy = 0, rSell = 0;
+  let rawPats = [];
 
+  for(let i = Math.max(0, n - lookback); i < n; i++) {
+    rBuy += buyScore[i];
+    rSell += sellScore[i];
+    if(detected[i].length > 0) {
+      detected[i].forEach(p => {
+        if(!rawPats.includes(p)) rawPats.push(p); // 避免重複顯示相同形態
+      });
+    }
+  }
+
+  const netScore = +(rBuy - rSell).toFixed(1);
+  rBuy = +rBuy.toFixed(1);
+  rSell = +rSell.toFixed(1);
+  const allPats = rawPats.slice(0, 6); // 介面最多顯示 6 個重要形態  
   let level,advice,conf;
   if(netScore>=8.0)      {level='強烈看多';advice='💪 強烈買入訊號';conf='高';}
   else if(netScore>=4.0) {level='看多';    advice='👍 偏多操作';    conf='中高';}
