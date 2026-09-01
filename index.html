@@ -540,110 +540,87 @@ function getSessionMult(symbol) {
   if(h>=12&&h<16) return [1.2,'London+NY重疊（最佳）'];
   return [1.0, active.join('+')];
 }
+// ════════════════════════════════════════════════════════════
 
-// ════════════════════════════════
 // DATA FETCH
 // ════════════════════════════════
-function buildUrls(symbol, period, interval) {
-  const base1 = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${period}&includePrePost=false`;
-  const base2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${period}&includePrePost=false`;
-  return [
-    `https://corsproxy.io/?${encodeURIComponent(base1)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base2)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base1)}`,
-    `https://thingproxy.freeboard.io/fetch/${base1}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base1)}`,
-    base1,
-    base2,
-  ];
+const TWELVEDATA_API_KEY = 'c36f2d67f90f401a80d92baf9dbc94fc';
+
+function toTwelveDataSymbol(symbol) {
+    let s = String(symbol).toUpperCase().trim();
+    if (s.endsWith('=X')) {
+        const pair = s.replace('=X', '');
+        if (pair.length === 6) return pair.slice(0, 3) + '/' + pair.slice(3);
+        return pair;
+    }
+    if (s.endsWith('.TW')) return s.replace('.TW', '');
+    return s;
 }
 
-function parseYahooResponse(data) {
-  const r = data?.chart?.result?.[0];
-  if(r) {
-    const ts = r.timestamp || r.timestamps;
-    const q  = r.indicators?.quote?.[0];
-    if(ts && q) return {ts, q};
-  }
-  return null;
+function toTwelveDataInterval(interval) {
+    const map = { '5m': '5min', '15m': '15min', '1h': '1h' };
+    return map[interval] || '15min';
+}
+
+function toTwelveDataOutputSize(period) {
+    const map = { '3d': 100, '5d': 150, '7d': 200 };
+    return map[period] || 150;
 }
 
 async function fetchOHLCV(symbol, period, interval, onLog) {
-  const urls = buildUrls(symbol, period, interval);
-  const errors = [];
+    const tdSymbol = toTwelveDataSymbol(symbol);
+    const tdInterval = toTwelveDataInterval(interval);
+    const outputsize = toTwelveDataOutputSize(period);
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=${outputsize}&apikey=${TWELVEDATA_API_KEY}`;
 
-  for(let ui=0; ui<urls.length; ui++) {
-    const url = urls[ui];
-    const proxyName = ui===0||ui===1 ? 'corsproxy.io'
-                    : ui===2         ? 'allorigins'
-                    : ui===3         ? 'thingproxy'
-                    : ui===4         ? 'codetabs'
-                    : 'direct';
     try {
-      onLog && onLog(`  ↪ 嘗試 ${proxyName}...`, 'info');
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
-      const res  = await fetch(url, {
-        signal: ctrl.signal,
-        headers: { 'Accept': 'application/json' }
-      });
-      clearTimeout(timer);
+        onLog && onLog(`  ↪ 嘗試 Twelve Data...`, 'info');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        const res = await fetch(url, { signal: ctrl.signal, headers: { 'Accept': 'application/json' } });
+        clearTimeout(timer);
 
-      if(!res.ok) {
-        errors.push(`${proxyName}: HTTP ${res.status}`);
-        continue;
-      }
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); }
-      catch(e) {
-        errors.push(`${proxyName}: 回應非 JSON（可能被攔截）`);
-        continue;
-      }
+        if (!res.ok) {
+            return { rows: null, errors: [`Twelve Data: HTTP ${res.status}`] };
+        }
+        const data = await res.json();
 
-      const yErr = data?.chart?.error;
-      if(yErr) {
-        errors.push(`${proxyName}: Yahoo 錯誤 — ${yErr.description||yErr.code||JSON.stringify(yErr)}`);
-        continue;
-      }
+        if (data.status === 'error' || data.code) {
+            return { rows: null, errors: [`Twelve Data: ${data.message || 'API 錯誤'}`] };
+        }
+        if (!data.values || !Array.isArray(data.values)) {
+            return { rows: null, errors: [`Twelve Data: 無資料（symbol 可能不支援：${tdSymbol}）`] };
+        }
 
-      const parsed = parseYahooResponse(data);
-      if(!parsed) {
-        errors.push(`${proxyName}: 無法解析回應結構`);
-        continue;
-      }
+        const rows = data.values
+            .map(v => ({
+                t: new Date(v.datetime),
+                o: Number(v.open),
+                h: Number(v.high),
+                l: Number(v.low),
+                c: Number(v.close),
+                v: Number(v.volume) || 0,
+            }))
+            .filter(r => !isNaN(r.c))
+            .reverse(); // Twelve Data 預設由新到舊排序，反轉成由舊到新
 
-      const {ts, q} = parsed;
-      const rows = [];
-      for(let i=0;i<ts.length;i++){
-        if(q.close[i]==null||isNaN(q.close[i])) continue;
-        rows.push({
-          t: new Date(ts[i]*1000),
-          o: q.open[i]  ?? q.close[i],
-          h: q.high[i]  ?? q.close[i],
-          l: q.low[i]   ?? q.close[i],
-          c: q.close[i],
-          v: q.volume[i]|| 0,
-        });
-      }
+        if (rows.length < 5) {
+            return { rows: null, errors: [`Twelve Data: 有效K棒只有 ${rows.length} 根（太少）`] };
+        }
 
-      if(rows.length < 5) {
-        errors.push(`${proxyName}: 有效K棒只有 ${rows.length} 根（太少）`);
-        continue;
-      }
+        onLog && onLog(`  ✓ Twelve Data 成功，取得 ${rows.length} 根K棒`, 'ok');
+        return { rows, source: 'Twelve Data' };
 
-      onLog && onLog(`  ✓ ${proxyName} 成功，取得 ${rows.length} 根K棒`, 'ok');
-      return { rows, source: proxyName };
-
-    } catch(e) {
-      const reason = e.name==='AbortError' ? '請求超時(12s)' : e.message;
-      errors.push(`${proxyName}: ${reason}`);
-      continue;
+    } catch (e) {
+        const reason = e.name === 'AbortError' ? '請求超時(15s)' : e.message;
+        return { rows: null, errors: [`Twelve Data: ${reason}`] };
     }
-  }
-
-  return { rows: null, errors };
 }
+
+// ════════════════════════════════
+
+
+// ════════════════════════════════
 
 // ════════════════════════════════
 // INDICATORS ENGINE
