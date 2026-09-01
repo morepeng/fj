@@ -546,6 +546,10 @@ function getSessionMult(symbol) {
 // ════════════════════════════════
 const TWELVEDATA_API_KEY = 'c36f2d67f90f401a80d92baf9dbc94fc';
 
+function isTaiwanSymbol(symbol) {
+    return /\.TW$/i.test(String(symbol).trim());
+}
+
 function toTwelveDataSymbol(symbol) {
     let s = String(symbol).toUpperCase().trim();
     if (s.endsWith('=X')) {
@@ -553,7 +557,6 @@ function toTwelveDataSymbol(symbol) {
         if (pair.length === 6) return pair.slice(0, 3) + '/' + pair.slice(3);
         return pair;
     }
-    if (s.endsWith('.TW')) return s.replace('.TW', '');
     return s;
 }
 
@@ -567,7 +570,52 @@ function toTwelveDataOutputSize(period) {
     return map[period] || 150;
 }
 
-async function fetchOHLCV(symbol, period, interval, onLog) {
+// ---------------- FinMind（台股專用，免代理，僅日線） ----------------
+async function fetchFinMindTW(symbol, onLog) {
+    const pure = String(symbol).toUpperCase().trim().replace('.TW', '').replace('.TWO', '');
+    const end = new Date();
+    const start = new Date(end.getTime() - 400 * 86400000);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${encodeURIComponent(pure)}&start_date=${fmt(start)}&end_date=${fmt(end)}`;
+
+    try {
+        onLog && onLog(`  ↪ 嘗試 FinMind（台股日線）...`, 'info');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        const res = await fetch(url, { signal: ctrl.signal, headers: { 'Accept': 'application/json' } });
+        clearTimeout(timer);
+
+        if (!res.ok) return { rows: null, errors: [`FinMind: HTTP ${res.status}`] };
+        const data = await res.json();
+
+        if (!data || data.status !== 200 || !Array.isArray(data.data) || !data.data.length) {
+            return { rows: null, errors: [`FinMind: 無資料或代碼錯誤（${pure}）`] };
+        }
+
+        const rows = data.data
+            .map(d => ({
+                t: new Date(d.date),
+                o: Number(d.open),
+                h: Number(d.max),
+                l: Number(d.min),
+                c: Number(d.close),
+                v: Number(d.Trading_Volume) || 0,
+            }))
+            .filter(r => !isNaN(r.c) && r.c > 0);
+
+        if (rows.length < 5) return { rows: null, errors: [`FinMind: 有效資料只有 ${rows.length} 筆（太少）`] };
+
+        onLog && onLog(`  ✓ FinMind 成功，取得 ${rows.length} 天日線（台股無盤中K棒，改用日線）`, 'ok');
+        return { rows, source: 'FinMind(日線)' };
+
+    } catch (e) {
+        const reason = e.name === 'AbortError' ? '請求超時(15s)' : e.message;
+        return { rows: null, errors: [`FinMind: ${reason}`] };
+    }
+}
+
+// ---------------- Twelve Data（美股/外匯/加密貨幣，支援盤中K棒） ----------------
+async function fetchTwelveData(symbol, period, interval, onLog) {
     const tdSymbol = toTwelveDataSymbol(symbol);
     const tdInterval = toTwelveDataInterval(interval);
     const outputsize = toTwelveDataOutputSize(period);
@@ -580,9 +628,7 @@ async function fetchOHLCV(symbol, period, interval, onLog) {
         const res = await fetch(url, { signal: ctrl.signal, headers: { 'Accept': 'application/json' } });
         clearTimeout(timer);
 
-        if (!res.ok) {
-            return { rows: null, errors: [`Twelve Data: HTTP ${res.status}`] };
-        }
+        if (!res.ok) return { rows: null, errors: [`Twelve Data: HTTP ${res.status}`] };
         const data = await res.json();
 
         if (data.status === 'error' || data.code) {
@@ -602,11 +648,9 @@ async function fetchOHLCV(symbol, period, interval, onLog) {
                 v: Number(v.volume) || 0,
             }))
             .filter(r => !isNaN(r.c))
-            .reverse(); // Twelve Data 預設由新到舊排序，反轉成由舊到新
+            .reverse();
 
-        if (rows.length < 5) {
-            return { rows: null, errors: [`Twelve Data: 有效K棒只有 ${rows.length} 根（太少）`] };
-        }
+        if (rows.length < 5) return { rows: null, errors: [`Twelve Data: 有效K棒只有 ${rows.length} 根（太少）`] };
 
         onLog && onLog(`  ✓ Twelve Data 成功，取得 ${rows.length} 根K棒`, 'ok');
         return { rows, source: 'Twelve Data' };
@@ -617,8 +661,13 @@ async function fetchOHLCV(symbol, period, interval, onLog) {
     }
 }
 
-// ════════════════════════════════
-
+// ---------------- 統一入口：依標的類型自動分流 ----------------
+async function fetchOHLCV(symbol, period, interval, onLog) {
+    if (isTaiwanSymbol(symbol)) {
+        return await fetchFinMindTW(symbol, onLog);
+    }
+    return await fetchTwelveData(symbol, period, interval, onLog);
+}
 
 // ════════════════════════════════
 
