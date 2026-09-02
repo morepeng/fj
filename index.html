@@ -1991,6 +1991,202 @@ function renderResults(results){
   document.getElementById('footerTime').textContent = '最後更新：' + new Date().toLocaleString('zh-TW');
 }
 
+function macdProSection(r) {
+  const ind = r.ind;
+  const i = ind.n - 1, pi = i - 1;
+  const macd = ind.macd[i], sig = ind.macdSig[i], hist = ind.macdHist[i];
+  const pMacd = ind.macd[pi], pSig = ind.macdSig[pi];
+
+  let crossLabel = '無交叉', crossCls = 'dv-yellow';
+  if (!isNaN(macd) && !isNaN(sig) && !isNaN(pMacd) && !isNaN(pSig)) {
+    if (macd > sig && pMacd <= pSig) { crossLabel = '金叉（剛發生）'; crossCls = 'dv-green'; }
+    else if (macd < sig && pMacd >= pSig) { crossLabel = '死叉（剛發生）'; crossCls = 'dv-red'; }
+    else if (macd > sig) { crossLabel = 'DIF在DEA上方（多頭續航）'; crossCls = 'dv-green'; }
+    else if (macd < sig) { crossLabel = 'DIF在DEA下方（空頭續航）'; crossCls = 'dv-red'; }
+  }
+
+  const zeroPos = macd > 0 ? '零軸上方（強勢區）' : '零軸下方（弱勢區）';
+  const zeroCls = macd > 0 ? 'dv-green' : 'dv-red';
+
+  let histTrend = '持平', histCls = 'dv-yellow';
+  const pHist = ind.macdHist[pi];
+  if (!isNaN(hist) && !isNaN(pHist)) {
+    if (hist > 0 && hist > pHist) { histTrend = '紅柱放大（多頭動能增強）'; histCls = 'dv-green'; }
+    else if (hist > 0 && hist < pHist) { histTrend = '紅柱縮短（多頭動能減弱，留意頂背離）'; histCls = 'dv-yellow'; }
+    else if (hist < 0 && hist < pHist) { histTrend = '綠柱放大（空頭動能增強）'; histCls = 'dv-red'; }
+    else if (hist < 0 && hist > pHist) { histTrend = '綠柱縮短（空頭動能減弱，留意底背離）'; histCls = 'dv-yellow'; }
+  }
+
+  let divergence = '未偵測到明顯背離';
+  let divCls = 'dv-yellow';
+  const lb = Math.min(20, ind.n);
+  if (ind.n > lb + 2) {
+    const closesSeg = ind.C.slice(-lb);
+    const histSeg = ind.macdHist.slice(-lb).filter(v => !isNaN(v));
+    if (histSeg.length > 5) {
+      const maxPriceIdx = closesSeg.indexOf(Math.max(...closesSeg));
+      const minPriceIdx = closesSeg.indexOf(Math.min(...closesSeg));
+      const nearEnd = lb - 1;
+      if (maxPriceIdx > lb * 0.6 && maxPriceIdx < nearEnd && closesSeg[maxPriceIdx] >= closesSeg[nearEnd] * 0.995) {
+        const histAtMax = ind.macdHist[ind.n - lb + maxPriceIdx];
+        if (!isNaN(histAtMax) && hist < histAtMax && closesSeg[nearEnd] >= closesSeg[maxPriceIdx] * 0.998) {
+          divergence = '疑似頂背離（價創高但動能未創高，留意反轉風險）';
+          divCls = 'dv-red';
+        }
+      }
+      if (minPriceIdx > lb * 0.6 && minPriceIdx < nearEnd && closesSeg[minPriceIdx] <= closesSeg[nearEnd] * 1.005) {
+        const histAtMin = ind.macdHist[ind.n - lb + minPriceIdx];
+        if (!isNaN(histAtMin) && hist > histAtMin && closesSeg[nearEnd] <= closesSeg[minPriceIdx] * 1.002) {
+          divergence = '疑似底背離（價創低但動能未創低，留意反彈機會）';
+          divCls = 'dv-green';
+        }
+      }
+    }
+  }
+
+  return `
+    <div class="detail-section" style="margin-bottom:14px">
+      <div class="detail-section-title">📊 MACD 專業版判讀</div>
+      <div class="detail-row"><span class="detail-key">DIF/DEA交叉</span><span class="detail-val ${crossCls}">${crossLabel}</span></div>
+      <div class="detail-row"><span class="detail-key">零軸位置</span><span class="detail-val ${zeroCls}">${zeroPos}</span></div>
+      <div class="detail-row"><span class="detail-key">柱狀能量</span><span class="detail-val ${histCls}">${histTrend}</span></div>
+      <div class="detail-row"><span class="detail-key">背離偵測</span><span class="detail-val ${divCls}" style="font-size:0.76rem">${divergence}</span></div>
+      <div class="detail-row"><span class="detail-key">DIF數值</span><span class="detail-val">${fmt4(macd)}</span></div>
+      <div class="detail-row"><span class="detail-key">DEA數值</span><span class="detail-val">${fmt4(sig)}</span></div>
+      <div class="detail-row"><span class="detail-key">柱值(HIST)</span><span class="detail-val ${hist>0?'dv-green':'dv-red'}">${fmt4(hist)}</span></div>
+    </div>`;
+}
+
+function candlePatternMatch(r) {
+  const ind = r.ind;
+  const i = ind.n - 1;
+  const matches = [];
+
+  if (ind.lowerS[i] > ind.candle[i] * 0.5 && ind.body[i] < ind.candle[i] * 0.35 && ind.upperS[i] < ind.candle[i] * 0.15) {
+    matches.push({ name: '錘子線 Hammer', side: 'bull', note: '下影線長、實體小，下跌動能可能衰竭' });
+  }
+  if (ind.bullEngulf && ind.bullEngulf[i]) {
+    matches.push({ name: '看漲吞沒 Bullish Engulfing', side: 'bull', note: '陽線完全吞沒前根陰線，多頭轉強' });
+  }
+  if (ind.bearEngulf && ind.bearEngulf[i]) {
+    matches.push({ name: '看跌吞沒 Bearish Engulfing', side: 'bear', note: '陰線完全吞沒前根陽線，空頭轉強' });
+  }
+  if (ind.dragonfly && ind.dragonfly[i]) {
+    matches.push({ name: '蜻蜓十字 Dragonfly Doji', side: 'bull', note: '長下影十字星，底部訊號' });
+  }
+  if (ind.gravestone && ind.gravestone[i]) {
+    matches.push({ name: '墓碑十字 Gravestone Doji', side: 'bear', note: '長上影十字星，頂部訊號' });
+  }
+  if (ind.strongBull && ind.strongBull[i]) {
+    matches.push({ name: '強勢陽線（近旭日東升）', side: 'bull', note: '實體飽滿且放量，多頭動能強' });
+  }
+  if (ind.strongBear && ind.strongBear[i]) {
+    matches.push({ name: '強勢陰線（近烏雲蓋頂）', side: 'bear', note: '實體飽滿且放量，空頭動能強' });
+  }
+  if (ind.bullPin && ind.bullPin[i]) {
+    matches.push({ name: '下影Pin Bar', side: 'bull', note: '長下影線，買盤在低位承接' });
+  }
+  if (ind.bearPin && ind.bearPin[i]) {
+    matches.push({ name: '上影Pin Bar', side: 'bear', note: '長上影線，賣壓在高位湧現' });
+  }
+  if (ind.triBreakUp && ind.triBreakUp[i]) {
+    matches.push({ name: '三角整理向上突破', side: 'bull', note: '波動收斂後選擇方向，偏多' });
+  }
+  if (ind.triBreakDn && ind.triBreakDn[i]) {
+    matches.push({ name: '三角整理向下突破', side: 'bear', note: '波動收斂後選擇方向，偏空' });
+  }
+  if (ind.ibBreakUp && ind.ibBreakUp[i]) {
+    matches.push({ name: 'Inside Bar 向上突破', side: 'bull', note: '母子線突破前高，動能延續偏多' });
+  }
+  if (ind.ibBreakDn && ind.ibBreakDn[i]) {
+    matches.push({ name: 'Inside Bar 向下突破', side: 'bear', note: '母子線跌破前低，動能延續偏空' });
+  }
+
+  return matches;
+}
+
+function supportResistanceSection(r) {
+  const ind = r.ind;
+  const i = ind.n - 1;
+  const c = ind.C[i];
+  const keyRes = r.keyRes, keySup = r.keySup;
+  const distToRes = ((keyRes - c) / c * 100).toFixed(2);
+  const distToSup = ((c - keySup) / c * 100).toFixed(2);
+
+  return `
+    <div class="detail-row"><span class="detail-key">關鍵壓力</span><span class="detail-val dv-red">${fmt4(keyRes)}（距現價 +${distToRes}%）</span></div>
+    <div class="detail-row"><span class="detail-key">關鍵支撐</span><span class="detail-val dv-green">${fmt4(keySup)}（距現價 -${distToSup}%）</span></div>
+    <div class="detail-row"><span class="detail-key">Donchian上緣</span><span class="detail-val dv-red">${fmt4(r.dc20Up)}</span></div>
+    <div class="detail-row"><span class="detail-key">Donchian下緣</span><span class="detail-val dv-green">${fmt4(r.dc20Dn)}</span></div>`;
+}
+
+function volumePriceSection(r) {
+  const ind = r.ind;
+  const i = ind.n - 1;
+  const volRatio = ind.volRatio[i];
+  const obvTrend = r.obvUp ? 'OBV上升（量增價漲，健康）' : (r.obvDn ? 'OBV下降（量縮價漲需留意，或量增價跌偏空）' : 'OBV持平');
+  const obvCls = r.obvUp ? 'dv-green' : (r.obvDn ? 'dv-red' : 'dv-yellow');
+  const volLabel = volRatio > 1.5 ? `明顯放量（${volRatio.toFixed(1)}倍均量）` : volRatio < 0.7 ? `明顯縮量（${volRatio.toFixed(1)}倍均量）` : `量能正常（${volRatio.toFixed(1)}倍均量）`;
+  const volCls = volRatio > 1.5 ? 'dv-orange' : volRatio < 0.7 ? 'dv-yellow' : 'dv-blue';
+  const cmfV = r.cmfV;
+  const cmfLabel = cmfV > 0.15 ? '資金流入明顯' : cmfV < -0.15 ? '資金流出明顯' : '資金流向中性';
+  const cmfCls = cmfV > 0.15 ? 'dv-green' : cmfV < -0.15 ? 'dv-red' : 'dv-yellow';
+
+  return `
+    <div class="detail-row"><span class="detail-key">成交量狀態</span><span class="detail-val ${volCls}">${volLabel}</span></div>
+    <div class="detail-row"><span class="detail-key">OBV量價關係</span><span class="detail-val ${obvCls}" style="font-size:0.76rem">${obvTrend}</span></div>
+    <div class="detail-row"><span class="detail-key">CMF資金流</span><span class="detail-val ${cmfCls}">${cmfLabel}（${cmfV.toFixed(3)}）</span></div>`;
+}
+
+function buildAstockTechCard(r) {
+  const patterns = candlePatternMatch(r);
+  const bullPats = patterns.filter(p => p.side === 'bull');
+  const bearPats = patterns.filter(p => p.side === 'bear');
+
+  const patternHtml = patterns.length
+    ? patterns.map(p => `
+        <div style="padding:6px 8px;margin-bottom:5px;border-radius:6px;background:${p.side==='bull'?'rgba(63,185,80,.08)':'rgba(248,81,73,.08)'};border-left:3px solid ${p.side==='bull'?'var(--green)':'var(--red)'}">
+          <div style="font-weight:700;font-size:0.8rem;color:${p.side==='bull'?'var(--green)':'var(--red)'}">${p.side==='bull'?'🟢':'🔴'} ${p.name}</div>
+          <div style="font-size:0.74rem;color:var(--text2);margin-top:2px">${p.note}</div>
+        </div>`).join('')
+    : `<div style="color:var(--text3);font-size:0.8rem;padding:8px 0">目前K棒未匹配到典型形態，回歸量價與均線系統判斷</div>`;
+
+  const overallBias = bullPats.length > bearPats.length ? '偏多'
+    : bearPats.length > bullPats.length ? '偏空' : '中性';
+  const biasCls = overallBias === '偏多' ? 'dv-green' : overallBias === '偏空' ? 'dv-red' : 'dv-yellow';
+
+  return `
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:14px;border:1px solid rgba(163,113,247,0.25)">
+      <div class="detail-section-title" style="color:var(--purple)">📐 A股短線量價與K線自動判讀</div>
+
+      <div class="detail-row" style="margin-bottom:8px">
+        <span class="detail-key">K線形態綜合傾向</span>
+        <span class="detail-val ${biasCls}" style="font-size:0.95rem">${overallBias}（${bullPats.length}多 / ${bearPats.length}空）</span>
+      </div>
+
+      <div style="margin:8px 0">${patternHtml}</div>
+
+      <div class="detail-grid" style="margin-top:10px">
+        <div class="detail-section">
+          <div class="detail-section-title">量價關係</div>
+          ${volumePriceSection(r)}
+        </div>
+        <div class="detail-section">
+          <div class="detail-section-title">支撐壓力</div>
+          ${supportResistanceSection(r)}
+        </div>
+      </div>
+
+      ${macdProSection(r)}
+
+      <div style="background:rgba(227,179,65,.08);border:1px solid rgba(227,179,65,.2);border-radius:6px;padding:8px 10px;margin-top:8px;font-size:0.75rem;color:var(--yellow2)">
+        ⚠️ 本卡片僅依「已收盤K棒」之量價與形態計算，不包含分時走勢、集合競價、龍虎榜等盤中逐筆資料（資料源未提供）。短線交易風險極高，止損永遠比判斷重要。
+      </div>
+    </div>`;
+}
+
+
+
 function showDetail(symbol){
   const r = allResults.find(x=>x.symbol===symbol);
   if(!r) return;
@@ -2101,7 +2297,7 @@ function showDetail(symbol){
     ${confluenceHtml}
     ${dowDetailsHtml}
     ${wyckDetailsHtml}
-
+    ${buildAstockTechCard(r)}
     <div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:14px">
       <div class="detail-section-title">🎯 SMC 聰明錢流動性追蹤</div>
       ${smcHtml}
