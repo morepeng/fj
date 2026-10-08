@@ -560,6 +560,22 @@ function toTwelveDataSymbol(symbol) {
     return s;
 }
 
+// Yahoo 風格代號 -> Twelve Data 候選代號（依序嘗試；免費方案不支援期貨，故以現貨/ETF 代理）
+const TD_MAP = {
+    'GC=F':['XAU/USD','GLD'], 'XAU=F':['XAU/USD','GLD'], 'XAUUSD=X':['XAU/USD','GLD'],
+    'SI=F':['XAG/USD','SLV'], 'XAG=F':['XAG/USD','SLV'], 'XAGUSD=X':['XAG/USD','SLV'],
+    'PL=F':['XPT/USD','PPLT'], 'PA=F':['XPD/USD','PALL'], 'HG=F':['XCU/USD','CPER'],
+    'CL=F':['WTI/USD','USO'], 'BZ=F':['XBR/USD','BNO'], 'NG=F':['NG/USD','UNG'],
+    'ES=F':['SPY'], 'NQ=F':['QQQ'], 'YM=F':['DIA'], 'RTY=F':['IWM'],
+};
+function tdCandidates(symbol) {
+    const s = String(symbol).toUpperCase().trim();
+    if (TD_MAP[s]) return TD_MAP[s];
+    const m = s.match(/^([A-Z0-9]+)-(USD|USDT|EUR|JPY)$/);   // BTC-USD -> BTC/USD
+    if (m) return [m[1] + '/' + m[2].replace('USDT', 'USD')];
+    return [toTwelveDataSymbol(s)];
+}
+
 function toTwelveDataInterval(interval) {
     const map = { '5m': '5min', '15m': '15min', '1h': '1h' };
     return map[interval] || '15min';
@@ -645,8 +661,8 @@ function tdNextUtcMidnight() {
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 1, 0);
 }
 
-async function fetchTwelveData(symbol, period, interval, onLog) {
-    const tdSymbol = toTwelveDataSymbol(symbol);
+async function fetchTwelveData(symbol, period, interval, onLog, overrideSymbol) {
+    const tdSymbol = overrideSymbol || toTwelveDataSymbol(symbol);
     const tdInterval = toTwelveDataInterval(interval);
     const outputsize = toTwelveDataOutputSize(period);
     const key = `${tdSymbol}|${tdInterval}|${outputsize}`;
@@ -671,6 +687,7 @@ async function fetchTwelveData(symbol, period, interval, onLog) {
 
     // 3) 實際請求（最多 3 次，429 時等到下一分鐘）
     let lastErr = '未知錯誤';
+    let notFound = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
         await tdAcquire(onLog);
         try {
@@ -698,9 +715,14 @@ async function fetchTwelveData(symbol, period, interval, onLog) {
                 onLog && onLog(`  ⚠ 429 每分鐘限流，等待下一分鐘後重試`, 'warn');
                 continue;
             }
-            if (!res.ok) { lastErr = `HTTP ${res.status}`; if (res.status >= 500) { await sleep(1500); continue; } break; }
-            if (data && (data.status === 'error' || data.code)) { lastErr = msg || 'API 錯誤'; break; }
-            if (!data || !Array.isArray(data.values)) { lastErr = `無資料（symbol 可能不支援：${tdSymbol}）`; break; }
+            if (!res.ok) {
+                lastErr = `HTTP ${res.status}${msg ? '：' + msg : ''}`;
+                if (res.status >= 500) { await sleep(1500); continue; }
+                notFound = (res.status === 404 || res.status === 400);
+                break;
+            }
+            if (data && (data.status === 'error' || data.code)) { lastErr = msg || 'API 錯誤'; notFound = /symbol|not found|plan|upgrade|available|grow|pro/i.test(msg) || [400,404].includes(Number(data.code)); break; }
+            if (!data || !Array.isArray(data.values)) { lastErr = `無資料（symbol 可能不支援：${tdSymbol}）`; notFound = true; break; }
 
             const rows = data.values
                 .map(v => ({
@@ -728,7 +750,7 @@ async function fetchTwelveData(symbol, period, interval, onLog) {
         onLog && onLog(`  ⚠ 抓取失敗（${lastErr}），改用舊快取`, 'warn');
         return { rows: cached.rows, source: 'Twelve Data (舊快取)' };
     }
-    return { rows: null, errors: [`Twelve Data: ${lastErr}`] };
+    return { rows: null, errors: [`Twelve Data: ${lastErr}（${tdSymbol}）`], notFound };
 }
 
 // ---------------- 統一入口：依標的類型自動分流 ----------------
@@ -736,7 +758,19 @@ async function fetchOHLCV(symbol, period, interval, onLog) {
     if (isTaiwanSymbol(symbol)) {
         return await fetchFinMindTW(symbol, onLog);
     }
-    return await fetchTwelveData(symbol, period, interval, onLog);
+    const cands = tdCandidates(symbol);
+    let last = null;
+    for (let i = 0; i < cands.length; i++) {
+        if (i > 0) onLog && onLog(`  ↪ 改用替代代號 ${cands[i]}`, 'warn');
+        const r = await fetchTwelveData(symbol, period, interval, onLog, cands[i]);
+        if (r.rows) {
+            if (i > 0) r.source += `，代理:${cands[i]}`;
+            return r;
+        }
+        last = r;
+        if (!r.notFound) break;      // 限流/逾時等非「代號不存在」問題，不必換代號
+    }
+    return last;
 }
 
 // ════════════════════════════════
